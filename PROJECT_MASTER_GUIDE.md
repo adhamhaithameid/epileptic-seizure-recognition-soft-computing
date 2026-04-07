@@ -75,10 +75,15 @@ Detailed Colab steps:
 - `05_results/tables/confusion_matrix_best_multiclass.csv`
 - `06_paper/draft/*.md`
 
-## 8) Folder Structure
+## 8) Final Paper Files
+- `RESEARCH_PAPER_FINAL_DRAFT.md` (single polished combined draft)
+- `06_paper/draft/09_full_paper_draft_mapped_to_template.md` (same draft inside paper folder)
+- `DOCX_TEMPLATE_MAPPING_CHECKLIST.md` (section-by-section mapping for the DOCX template)
+
+## 9) Folder Structure
 See:
 - `FOLDER_STRUCTURE.md`
 
-## 9) Notes
+## 10) Notes
 - The UCI direct ZIP endpoint currently fails (HTTP 404 in this environment), so the fetch script uses working mirrors automatically.
 - Current runtime config is optimized to finish reliably (3-fold CV + lighter wrapper/GA settings).

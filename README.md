@@ -60,3 +60,5 @@ python 04_src/fetch_data.py --force-download
 - `PROJECT_MASTER_GUIDE.md`: full project explanation and progress.
 - `FOLDER_STRUCTURE.md`: clean tree of folders/files.
 - `ABOUT.md`: repository scope summary.
+- `RESEARCH_PAPER_FINAL_DRAFT.md`: polished combined paper draft.
+- `DOCX_TEMPLATE_MAPPING_CHECKLIST.md`: exact copy map into template sections.
