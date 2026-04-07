@@ -1,0 +1,3 @@
+# References
+
+Add references in APA style and cite them in-text as [1], [2], ...
