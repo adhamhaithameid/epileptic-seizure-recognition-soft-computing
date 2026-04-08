@@ -1,3 +1,3 @@
 # Conclusion and Future Work
 
-Summarize the best-performing methods and findings, then propose future improvements such as advanced deep models, feature engineering, and external validation datasets.
+Summarize strongest combinations and propose next steps: stronger tuning, statistical testing, and cross-dataset validation.

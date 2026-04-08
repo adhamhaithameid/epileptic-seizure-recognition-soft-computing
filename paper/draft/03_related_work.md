@@ -1,3 +1,3 @@
 # Related Work
 
-Add at least 10 related studies here with a comparison table containing: Reference, Year, Methods, and Results.
+Add at least 10 related studies with a table: Reference, Year, Methods, and Results.

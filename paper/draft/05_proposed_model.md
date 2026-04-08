@@ -1,3 +1,3 @@
 # Proposed Model
 
-Describe each phase of the implemented workflow and include the system diagram.
+The proposed model is a staged Cartesian engine that enumerates all method combinations across tracks and folds, then logs metrics and skip reasons in a standardized schema.
