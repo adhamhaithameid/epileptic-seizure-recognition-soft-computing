@@ -8,11 +8,15 @@ Epileptic Seizure Recognition with a Full Cartesian Soft Computing Benchmark
 - Semester: Spring 2026
 
 ## Abstract
-Epileptic seizure recognition from EEG signals remains challenging because EEG is noisy, non-stationary, and difficult to compare fairly across heterogeneous pipelines. This study presents a reproducible soft-computing benchmark framework that evaluates preprocessing, feature reduction, feature selection, and classification in one deterministic Cartesian engine.
+Epileptic seizure recognition from electroencephalogram (EEG) signals remains a clinically important yet technically difficult task because EEG recordings are noisy, nonstationary, high dimensional, and strongly variable across subjects, sessions, and recording setups. Many published studies report high detection or classification performance, but fair comparison is often limited by inconsistent preprocessing choices, heterogeneous feature pipelines, different evaluation protocols, and incomplete reporting of failure cases. This project addresses that gap by developing a reproducible, end to end soft computing benchmark that evaluates preprocessing, feature reduction, feature selection, and classification under one deterministic Cartesian experiment design. The framework uses standardized paths, schema-controlled outputs, checkpointed execution, and paper-ready reporting assets.
 
-The benchmark evaluates two tracks (binary and multiclass) using four preprocessing methods, four reduction options, eight selection strategies, and six classifiers under 3-fold stratified cross-validation. This design yields 1,536 unique pipelines and 4,608 fold-level evaluations. Invalid combinations are handled through safe auto-fix and skip logging (`status`, `skip_reason`) to preserve run continuity and auditability.
+Two prediction tracks are evaluated: binary seizure recognition and multiclass seizure state classification. The benchmark enumerates four preprocessing methods, four reduction options, eight feature selection strategies, and six classifiers under three fold stratified cross validation. This results in 1,536 unique method combinations and 4,608 fold level evaluations. The workflow includes explicit guardrails for mathematically invalid combinations, including dynamic parameter clamping, nonnegative transformation support for chi square feature selection, and robust skip logging with status and skip reason fields. Instead of terminating the run at the first invalid stage, the engine records structured failure rows and continues, preserving total accounting and enabling transparent post hoc analysis of error modes.
 
-In the validated full run on Apple Silicon M1, all 4,608 fold evaluations were processed (`4392` successful, `216` safely skipped/failed). The best binary configuration was `svm + quantile + pca + none` (`accuracy=0.976261`, `f1=0.939349`, `roc_auc=0.995438`), and the best multiclass configuration was `mlp_ann + minmax + pca + none` (`accuracy=0.685651`, `f1=0.685026`). The framework produces standardized metrics, rankings, plots, and paper-ready drafts, enabling transparent and reproducible comparison for course-scale and research-scale experimentation.
+In the validated full run on Apple Silicon M1, all 4,608 fold evaluations were executed and recorded, with 4,392 successful evaluations and 216 safely skipped or failed evaluations linked to documented low dimensional feature selection edge cases. The strongest binary pipeline combined quantile preprocessing, principal component analysis, no additional feature selection, and a support vector machine, achieving accuracy 0.976261, F1 score 0.939349, and ROC AUC 0.995438. The strongest multiclass pipeline combined minmax scaling, principal component analysis, no additional selection, and a multilayer perceptron, achieving accuracy 0.685651 and F1 score 0.685026.
+
+Beyond model scores, the project contributes a reproducible benchmarking template for course and research experimentation. Outputs include fold level metrics, run manifests, ranking tables for binary and multiclass tracks, baseline deltas, comparison reports, and visualization suites including heatmaps, top N performance charts, fold variance analysis, and binary ROC curves. The resulting pipeline supports transparent method comparison, reproducible experimentation, and direct integration into research paper drafting for students. It also provides a practical foundation for future work in hyperparameter optimization, statistical significance testing, cross dataset generalization, and deployment aware evaluation for real time seizure monitoring systems.
+
+From an implementation perspective, the benchmark supports resumable execution, deterministic iteration order, and schema validation checks that confirm expected combination coverage and metric completeness. This design minimizes silent errors and makes long runs feasible on commodity laptops and cloud notebooks. The project therefore balances algorithmic breadth with engineering rigor: every evaluated configuration is traceable, every skip is explainable, and every aggregate result can be regenerated from raw fold outputs. As a result, the study offers both strong empirical baselines and a reusable workflow for future soft computing coursework and thesis level research.
 
 ## Keywords
 Soft Computing, Epileptic Seizure Recognition, Cartesian Benchmark, Feature Reduction, Feature Selection, Genetic Algorithm, Classification
@@ -119,6 +123,8 @@ Combination math:
 - Successful rows: `4392`
 - Skipped/failed rows: `216`
 - Runtime: `5294.26 sec` (`88.24 min`)
+- Execution device: `cpu`
+- Acceleration backend: `none` (no GPU acceleration in this validated run)
 
 Best pipelines from `cartesian_run_manifest.json`:
 - Binary: `svm + quantile + pca + none`  
@@ -173,22 +179,83 @@ Future work:
 4. Add deployment-oriented profiling (latency/memory) for real-time or edge inference scenarios.
 
 ## 7. References
-[R1] Siddiqui, M. K., Morales-Menendez, R., Huang, X., & Hussain, N. (2020). A review of epileptic seizure detection using machine learning classifiers. *Brain Informatics, 7*(1), Article 5. https://doi.org/10.1186/s40708-020-00105-1
 
-[R2] Liu, Q., Zhao, X., Hou, Z., & Liu, H. (2017). Epileptic seizure detection based on the kernel extreme learning machine. *Technology and Health Care, 25*(S1), 399-409. https://doi.org/10.3233/THC-171343
+[R1] Siddiqui, M. K., Morales-Menendez, R., Huang, X., & Hussain, N. (2020). A review of epileptic seizure detection using machine learning classifiers. *Brain Informatics, 7*(1), 5. https://doi.org/10.1186/s40708-020-00105-1
 
-[R3] Chen, W., Wang, Y., Ren, Y., Jiang, H., Du, G., Zhang, J., & Li, J. (2023). An automated detection of epileptic seizures EEG using CNN classifier based on feature fusion with high accuracy. *BMC Medical Informatics and Decision Making, 23*(1), Article 96. https://doi.org/10.1186/s12911-023-02180-w
+[R2] Liu, Q., Zhao, X., Hou, Z., & Liu, H. (2017). Epileptic seizure detection based on the kernel extreme learning machine. *Technology and Health Care, 25*(1_suppl), 399-409. https://doi.org/10.3233/THC-171343
 
-[R4] Khalid, M., Raza, A., Akhtar, A., Rustam, F., Ballester, J. B., Rodriguez, C. L., Díez, I. T., & Ashraf, I. (2024). Diagnosing epileptic seizures using combined features from independent components and prediction probability from EEG data. *DIGITAL HEALTH, 10*. https://doi.org/10.1177/20552076241277185
+[R3] Chen, W., Wang, Y., Ren, Y., Jiang, H., Du, G., Zhang, J., & Li, J. (2023). An automated detection of epileptic seizures EEG using CNN classifier based on feature fusion with high accuracy. *BMC Medical Informatics and Decision Making, 23*(1), 96. https://doi.org/10.1186/s12911-023-02180-w
+
+[R4] Khalid, M., Raza, A., Akhtar, A., Rustam, F., Ballester, J. B., Rodriguez, C. L., Díez, I. D. L. T., & Ashraf, I. (2024). Diagnosing epileptic seizures using combined features from independent components and prediction probability from EEG data. *DIGITAL HEALTH, 10*, 20552076241277185. https://doi.org/10.1177/20552076241277185
 
 [R5] Saranya, D., & Bharathi, A. (2024). Automatic detection of epileptic seizure using machine learning-based IANFIS-LightGBM system. *Journal of Intelligent & Fuzzy Systems, 46*(1), 2463-2482. https://doi.org/10.3233/JIFS-233430
 
-[R6] Atlam, H. F., Aderibigbe, G. E., & Nadeem, M. S. (2025). Effective epileptic seizure detection with hybrid feature selection and SMOTE-based data balancing using SVM classifier. *Applied Sciences, 15*(9), 4690. https://doi.org/10.3390/app15094690
+[R6] Atlam, H. F., Aderibigbe, G. E., & Nadeem, M. S. (2025). Effective Epileptic Seizure Detection with Hybrid Feature Selection and SMOTE-Based Data Balancing Using SVM Classifier. *Applied Sciences, 15*(9), 4690. https://doi.org/10.3390/app15094690
 
-[R7] Berrich, Y., & Guennoun, Z. (2025). EEG-based epilepsy detection using CNN-SVM and DNN-SVM with feature dimensionality reduction by PCA. *Scientific Reports, 15*(1), Article 14313. https://doi.org/10.1038/s41598-025-95831-z
+[R7] Berrich, Y., & Guennoun, Z. (2025). EEG-based epilepsy detection using CNN-SVM and DNN-SVM with feature dimensionality reduction by PCA. *Scientific Reports, 15*(1), 14313. https://doi.org/10.1038/s41598-025-95831-z
 
 [R8] Chakrabarti, S., Swetapadma, A., & Pattnaik, P. K. (2022). An improved method for recognizing pediatric epileptic seizures based on advanced learning and moving window technique. *Journal of Ambient Intelligence and Smart Environments, 14*(1), 39-59. https://doi.org/10.3233/AIS-210042
 
-[R9] Andrzejak, R. G., Lehnertz, K., Mormann, F., Rieke, C., David, P., & Elger, C. E. (2001). Indications of nonlinear deterministic and finite-dimensional structures in time series of brain electrical activity: Dependence on recording region and brain state. *Physical Review E, 64*(6). https://doi.org/10.1103/PhysRevE.64.061907
+[R9] Andrzejak, R. G., Lehnertz, K., Mormann, F., Rieke, C., David, P., & Elger, C. E. (2001). Indications of nonlinear deterministic and finite-dimensional structures in time series of brain electrical activity: Dependence on recording region and brain state. *Physical Review E, 64*(6), 061907. https://doi.org/10.1103/PhysRevE.64.061907
 
-[R10] Shoeb, A., Edwards, H., Connolly, J., Bourgeois, B., Treves, T., & Guttag, J. (2004). Patient-specific seizure onset detection. In *The 26th Annual International Conference of the IEEE Engineering in Medicine and Biology Society* (Vol. 3, pp. 419-422). https://doi.org/10.1109/IEMBS.2004.1403183
+[R10] Shoeb, A., Edwards, H., Connolly, J., Bourgeois, B., Treves, T., & Guttag, J. (2004). Patient-specific seizure onset detection. *The 26th Annual International Conference of the IEEE Engineering in Medicine and Biology Society, 3*, 419-422. https://doi.org/10.1109/IEMBS.2004.1403183
+
+[R11] Kode, H., Elleithy, K., & Almazaydeh, L. (2024). Epileptic Seizure Detection in EEG Signals Using Machine Learning and Deep Learning Techniques. *IEEE Access, 12*, 80657-80668. https://doi.org/10.1109/access.2024.3409581
+
+[R12] Zhao, X., Yoshida, N., Ueda, T., Sugano, H., & Tanaka, T. (2023). Epileptic seizure detection by using interpretable machine learning models. *Journal of Neural Engineering, 20*(1), 015002. https://doi.org/10.1088/1741-2552/acb089
+
+[R13] Qureshi, M. M., & Kaleem, M. (2023). EEG-based seizure prediction with machine learning. *Signal, Image and Video Processing, 17*(4), 1543-1554. https://doi.org/10.1007/s11760-022-02363-4
+
+[R14] Jemal, I., Abou-Abbas, L., Henni, K., Mitiche, A., & Mezghani, N. (2024). Domain adaptation for EEG-based, cross-subject epileptic seizure prediction. *Frontiers in Neuroinformatics, 18*, 1303380. https://doi.org/10.3389/fninf.2024.1303380
+
+[R15] Pontes, E. D., Pinto, M., Lopes, F., & Teixeira, C. (2024). Concept-drifts adaptation for machine learning EEG epilepsy seizure prediction. *Scientific Reports, 14*(1), 8204. https://doi.org/10.1038/s41598-024-57744-1
+
+[R16] Sigsgaard, G. M., & Gu, Y. (2024). Comparison of patient non-specific seizure detection using multi-modal signals. *Neuroscience Informatics, 4*(1), 100152. https://doi.org/10.1016/j.neuri.2023.100152
+
+[R17] Rukhsar, S., & Tiwari, A. K. (2023). Lightweight convolution transformer for cross-patient seizure detection in multi-channel EEG signals. *Computer Methods and Programs in Biomedicine, 242*, 107856. https://doi.org/10.1016/j.cmpb.2023.107856
+
+[R18] Zhang, Y., Xiao, T., Wang, Z., Lv, H., Wang, S., Feng, H., Zhao, S., & Zhao, Y. (2023). Hybrid Network for Patient-Specific Seizure Prediction from EEG Data. *International Journal of Neural Systems, 33*(11), 2350056. https://doi.org/10.1142/s0129065723500569
+
+[R19] Li, C., Deng, Z., Song, R., Liu, X., Qian, R., & Chen, X. (2023). EEG-Based Seizure Prediction via Model Uncertainty Learning. *IEEE Transactions on Neural Systems and Rehabilitation Engineering, 31*, 180-191. https://doi.org/10.1109/TNSRE.2022.3217929
+
+[R20] Mao, T., Li, C., Zhao, Y., Song, R., & Chen, X. (2023). EEG-Based Seizure Prediction Via GhostNet and Imbalanced Learning. *IEEE Sensors Letters, 7*(12), 1-4. https://doi.org/10.1109/LSENS.2023.3330327
+
+[R21] Pan, Y., Dong, F., Wu, J., & Xu, Y. (2023). Downsampling of EEG Signals for Deep Learning-Based Epilepsy Detection. *IEEE Sensors Letters, 7*(12), 1-4. https://doi.org/10.1109/LSENS.2023.3332392
+
+[R22] Deng, Z., Li, C., Song, R., Liu, X., Qian, R., & Chen, X. (2024). Centroid-Guided Domain Incremental Learning for EEG-Based Seizure Prediction. *IEEE Transactions on Instrumentation and Measurement, 73*, 1-13. https://doi.org/10.1109/TIM.2023.3334330
+
+[R23] Zhang, Z., Ji, T., Xiao, M., Wang, W., Yu, G., Lin, T., Jiang, Y., Zhou, X., & Lin, Z. (2024). Cross-patient automatic epileptic seizure detection using patient-adversarial neural networks with spatio-temporal EEG augmentation. *Biomedical Signal Processing and Control, 89*, 105664. https://doi.org/10.1016/j.bspc.2023.105664
+
+[R24] Ji, D., He, L., Dong, X., Li, H., Zhong, X., Liu, G., & Zhou, W. (2024). Epileptic Seizure Prediction Using Spatiotemporal Feature Fusion on EEG. *International Journal of Neural Systems, 34*(08), 2450041. https://doi.org/10.1142/s0129065724500412
+
+[R25] Liu, Y., Xu, C., Wen, Z., & Dong, Y. (2025). Trust EEG epileptic seizure detection via evidential multi-view learning. *Information Sciences, 694*, 121699. https://doi.org/10.1016/j.ins.2024.121699
+
+[R26] Dokare, I., & Gupta, S. (2025). Optimized seizure detection leveraging band-specific insights from limited EEG channels. *Health Information Science and Systems, 13*(1), 30. https://doi.org/10.1007/s13755-025-00348-4
+
+[R27] Kunekar, P., Gupta, M. K., & Gaur, P. (2024). Detection of epileptic seizure in EEG signals using machine learning and deep learning techniques. *Journal of Engineering and Applied Science, 71*(1), 21. https://doi.org/10.1186/s44147-023-00353-y
+
+[R28] Lemoine, É., Toffa, D., Xu, A. Q., Tessier, J. D., Jemel, M., Lesage, F., Nguyen, D. K., & Bou Assi, E. (2025). Improving diagnostic accuracy of routine EEG for epilepsy using deep learning. *Brain Communications, 7*(5), fcaf319. https://doi.org/10.1093/braincomms/fcaf319
+
+[R29] Deng, Z., Li, C., Zhao, G., & Chen, X. (2025). Incremental Learning for Patient-Specific EEG-Based Seizure Detection. *IEEE Transactions on Neural Systems and Rehabilitation Engineering, 33*, 4512-4522. https://doi.org/10.1109/TNSRE.2025.3628907
+
+[R30] Zhao, Y., Liu, A., Li, C., Wang, L., Qian, R., & Chen, X. (2026). Generalizable Seizure Prediction With LLMs: Converting EEG to Textual Representations. *IEEE Journal of Biomedical and Health Informatics, 30*(3), 2589-2602. https://doi.org/10.1109/JBHI.2025.3593337
+
+[R31] Jang, D., Jung, K. Y., Jeon, Y. G., Kim, T. J., Lee, S. K., & Min, K. Y. (2026). Single-channel EEG-based seizure prediction using deep learning. *Scientific Reports*. https://doi.org/10.1038/s41598-026-44670-7
+
+[R32] Darankoum, D., Villalba, M., Allioux, C., Caraballo, B., Dumont, C., Gronlier, E., Roucard, C., Roche, Y., Habermacher, C., Grudinin, S., & Volle, J. (2026). From epilepsy seizure classification to detection: A deep learning-based approach for raw EEG signals. *Neuroscience Informatics, 6*(1), 100263. https://doi.org/10.1016/j.neuri.2026.100263
+
+[R33] Naghipour, J., Ghazizadeh, R., & Hadi, M. (2026). GAN-based deep learning strategy for advanced EEG focal and non-focal classification in epilepsy. *Signal, Image and Video Processing, 20*(3), 106. https://doi.org/10.1007/s11760-026-05155-2
+
+[R34] Lin, Y., Dong, L., Jiang, Y., & Lian, J. (2025). Epileptic EEG classification via deep learning-based strange attractor. *Biomedical Signal Processing and Control, 100*, 106965. https://doi.org/10.1016/j.bspc.2024.106965
+
+[R35] Dong, C., Sun, D., Zhang, Z., & Luo, B. (2025). EEG-based patient-specific seizure prediction based on Spatial–Temporal Hypergraph Attention Transformer. *Biomedical Signal Processing and Control, 100*, 107075. https://doi.org/10.1016/j.bspc.2024.107075
+
+[R36] Wang, Z., Song, X., Chen, L., Nan, J., Sun, Y., Pang, M., Zhang, K., Liu, X., & Ming, D. (2024). Research progress of epileptic seizure prediction methods based on EEG. *Cognitive Neurodynamics, 18*(5), 2731-2750. https://doi.org/10.1007/s11571-024-10109-w
+
+[R37] Poorani, S., & Balasubramanie, P. (2023). Deep learning based epileptic seizure detection with EEG data. *International Journal of System Assurance Engineering and Management*. https://doi.org/10.1007/s13198-022-01845-5
+
+[R38] Diao, Y., Fang, J., Ding, Y., Zhao, Y., Meng, H., & Xu, Y. (2025). Temporal-Focal Attention on EEG for Cross-Patient Epileptic Seizure Detection. *2025 IEEE 22nd International Symposium on Biomedical Imaging (ISBI)*, 1-4. https://doi.org/10.1109/ISBI60581.2025.10980801
+
+[R39] Shoeb, A., Kharbouch, A., Soegaard, J., Schachter, S., & Guttag, J. (2011). An algorithm for detecting seizure termination in scalp EEG. *2011 Annual International Conference of the IEEE Engineering in Medicine and Biology Society*, 1443-1446. https://doi.org/10.1109/IEMBS.2011.6090357
+
+[R40] Shao, C., Li, C., Song, R., Xu, G., & Chen, X. (2025). Feature Unlearning for EEG-Based Seizure Prediction. *IEEE Internet of Things Journal, 12*(8), 10974-10986. https://doi.org/10.1109/JIOT.2024.3514666
