@@ -16,14 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.core import (  # noqa: E402
-    CartesianSpec,
-    RunnerIO,
-    build_summary,
-    generate_cartesian_plots,
-    save_comparisons,
-)
-from src.core.benchmark import run_cartesian_benchmark  # noqa: E402
+from src.runtime.acceleration import configure_acceleration  # noqa: E402
 from src.config.paths import (  # noqa: E402
     DATA_PROCESSED_DIR,
     DATASET_CSV,
@@ -114,6 +107,17 @@ def main() -> None:
     parser.add_argument("--checkpoint-every", type=int, default=100)
     parser.add_argument("--fresh", action="store_true", help="Start fresh and overwrite old metrics file.")
     parser.add_argument(
+        "--device",
+        choices=["auto", "cpu", "gpu"],
+        default="auto",
+        help="Execution target: auto (prefer GPU when available), cpu, or gpu.",
+    )
+    parser.add_argument(
+        "--strict-device",
+        action="store_true",
+        help="Fail immediately when --device gpu is requested but GPU acceleration is unavailable.",
+    )
+    parser.add_argument(
         "--jobs",
         type=int,
         default=1,
@@ -126,6 +130,23 @@ def main() -> None:
         help="Parallel workers for wrapper SFS internal CV (default: 1).",
     )
     args = parser.parse_args()
+
+    accel = configure_acceleration(device=args.device, strict=args.strict_device)
+    print(
+        f"[acceleration] requested={accel.requested} resolved={accel.resolved} "
+        f"backend={accel.backend} gpu_devices={accel.gpu_count}"
+    )
+    print(f"[acceleration] {accel.message}")
+
+    # Import the sklearn-heavy pipeline only after acceleration is configured.
+    from src.core import (
+        CartesianSpec,
+        RunnerIO,
+        build_summary,
+        generate_cartesian_plots,
+        save_comparisons,
+    )
+    from src.core.benchmark import run_cartesian_benchmark
 
     X_df, y_multi, y_binary = load_dataset()
     save_statistical_analysis(X_df)
@@ -156,6 +177,8 @@ def main() -> None:
         max_rows=args.max_rows,
         model_jobs=max(1, args.jobs),
         selection_jobs=max(1, args.selection_jobs),
+        execution_device=accel.resolved,
+        acceleration_backend=accel.backend,
     )
 
     ok = df[df["status"] == "ok"].copy()
@@ -183,6 +206,8 @@ def main() -> None:
     print(f"Saved plots: {len(plots)}")
     print(f"Model jobs: {max(1, args.jobs)}")
     print(f"Selection jobs: {max(1, args.selection_jobs)}")
+    print(f"Execution device: {accel.resolved}")
+    print(f"Acceleration backend: {accel.backend}")
 
 
 if __name__ == "__main__":

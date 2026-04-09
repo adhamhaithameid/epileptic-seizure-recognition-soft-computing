@@ -27,123 +27,97 @@ This repository contains a refactored Soft Computing course project for **Epilep
 `results/metrics/cartesian_run_manifest.json` fields:
 - `expected_combos, expected_fold_evals`
 - `completed_ok, skipped_or_failed, runtime_sec`
+- `execution_device, acceleration_backend`
 - `best_binary, best_multiclass`
 
-## Run on Any Laptop (Exact Steps)
+## Run on Linux, macOS, and Windows
 
-### A) Linux (NVIDIA GPU optional)
+### 1) One-time setup (all platforms)
 ```bash
-# 1) System dependencies
-sudo pacman -Syu --needed git python python-pip base-devel
-
-# 2) Clone repository
-mkdir -p ~/projects
-cd ~/projects
 git clone https://github.com/adhamhaithameid/soft-computing-main-project.git
 cd soft-computing-main-project
-
-# 3) Create and activate virtual environment
 python -m venv .venv311
-source .venv311/bin/activate
-
-# 4) Install Python dependencies
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install --disable-pip-version-check -r requirements.txt
-
-# 5) Environment check
-python src/cli/check_env.py
-
-# 6) Fetch/refresh dataset
-python src/cli/fetch_data.py
-
-# 7) Smoke test (quick)
-python src/cli/run_experiments.py --fresh --max-rows 120 --checkpoint-every 30
-python src/cli/validate_cartesian_outputs.py --allow-partial
-
-# 8) Full run (real benchmark)
-systemd-inhibit --what=sleep:idle --why="Soft computing full benchmark" \
-bash -lc 'source .venv311/bin/activate && python src/cli/run_experiments.py --fresh --checkpoint-every 120'
-
-# 9) Strict validation + paper drafts
-python src/cli/validate_cartesian_outputs.py
-python src/cli/generate_paper_drafts.py
 ```
 
-### B) macOS (Apple Silicon / Intel)
+- Linux/macOS activate:
 ```bash
-# 1) Install basic tools (if needed)
-xcode-select --install
-
-# 2) Clone repository
-mkdir -p ~/projects
-cd ~/projects
-git clone https://github.com/adhamhaithameid/soft-computing-main-project.git
-cd soft-computing-main-project
-
-# 3) Create and activate virtual environment
-python3 -m venv .venv311
 source .venv311/bin/activate
-
-# 4) Install dependencies
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install --disable-pip-version-check -r requirements.txt
-
-# 5) Full run
-caffeinate -dimsu bash -lc 'source .venv311/bin/activate && python src/cli/run_experiments.py --fresh --checkpoint-every 120'
-
-# 6) Validate and generate drafts
-python src/cli/validate_cartesian_outputs.py
-python src/cli/generate_paper_drafts.py
 ```
 
-### C) Windows (PowerShell)
+- Windows PowerShell activate:
 ```powershell
-# 1) Clone repository
-git clone https://github.com/adhamhaithameid/soft-computing-main-project.git
-cd soft-computing-main-project
-
-# 2) Create and activate virtual environment
-python -m venv .venv311
 .venv311\Scripts\Activate.ps1
+```
 
-# 3) Install dependencies
+- Install dependencies:
+```bash
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install --disable-pip-version-check -r requirements.txt
-
-# 4) Fetch + run + validate + drafts
-python src/cli/fetch_data.py
-python src/cli/run_experiments.py --fresh --checkpoint-every 120
-python src/cli/validate_cartesian_outputs.py
-python src/cli/generate_paper_drafts.py
 ```
 
-### Resume after interruption (all platforms)
+### 2) Full pipeline (cross-platform command)
 ```bash
-source .venv311/bin/activate
-python src/cli/run_experiments.py --checkpoint-every 120
+python run_all.py --fresh --device auto --checkpoint-every 120
 ```
 
+Wrapper scripts are also available:
+- Linux/macOS: `bash run_all.sh --fresh --device auto`
+- Windows PowerShell: `.\run_all.ps1 -Fresh -Device auto`
+- Windows cmd: `run_all.bat --fresh --device auto`
+
+### 3) GPU mode (NVIDIA + RAPIDS, with fallback)
+The benchmark now supports `--device {auto,cpu,gpu}`:
+- `auto`: try GPU first, fallback to CPU when unavailable.
+- `cpu`: force CPU mode.
+- `gpu`: request GPU mode.
+- `--strict-device`: fail if `gpu` cannot be enabled.
+
+GPU acceleration is enabled through RAPIDS `cuml.accel` (zero-code-change sklearn acceleration where supported).  
+For Linux/NVIDIA installation, use RAPIDS official instructions for your CUDA/Python version:
+- https://docs.rapids.ai/install
+
+Run with strict GPU requirement:
+```bash
+python src/cli/check_env.py --device gpu --strict-device
+python src/cli/run_experiments.py --fresh --device gpu --strict-device --checkpoint-every 120
+```
+
+### Resume after interruption
+```bash
+python src/cli/run_experiments.py --device auto --checkpoint-every 120
+```
 Do not use `--fresh` when resuming.
 
-### High-CPU mode (real parallelism)
-This project now supports explicit stage-level parallelism:
+### High-CPU mode (parallelism)
 - `--jobs`: parallel model evaluations per stage
 - `--selection-jobs`: parallel workers inside wrapper SFS
 
-Use this on high-core laptops:
+```bash
+python src/cli/run_experiments.py --fresh --device cpu --checkpoint-every 120 --jobs 8 --selection-jobs 8
+```
+
+Apple Silicon full-core run:
 ```bash
 source .venv311/bin/activate
-CORES=$(nproc)
-
-# When using --jobs > 1, avoid nested thread oversubscription:
+CORES=$(sysctl -n hw.ncpu)
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 export MPLBACKEND=Agg
 
-systemd-inhibit --what=sleep:idle --why="Soft computing full benchmark" \
-bash -lc "source .venv311/bin/activate && python src/cli/run_experiments.py --fresh --checkpoint-every 120 --jobs $CORES --selection-jobs $CORES"
+caffeinate -dimsu bash -lc "source .venv311/bin/activate && python src/cli/run_experiments.py --fresh --device cpu --checkpoint-every 120 --jobs $CORES --selection-jobs $CORES"
+```
+
+Smoke-test then partial validation:
+```bash
+python src/cli/run_experiments.py --fresh --device cpu --max-rows 300 --checkpoint-every 30 --jobs 4 --selection-jobs 4
+python src/cli/validate_cartesian_outputs.py --allow-partial
+```
+
+Full-run strict validation:
+```bash
+python src/cli/validate_cartesian_outputs.py
 ```
 
 ## Run from Colab

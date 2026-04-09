@@ -319,6 +319,8 @@ def run_cartesian_benchmark(
     max_rows: int | None = None,
     model_jobs: int = 1,
     selection_jobs: int = 1,
+    execution_device: str = "cpu",
+    acceleration_backend: str = "none",
 ) -> pd.DataFrame:
     started = time.perf_counter()
 
@@ -546,6 +548,8 @@ def run_cartesian_benchmark(
         "completed_ok": int((df["status"] == "ok").sum()),
         "skipped_or_failed": int((df["status"] != "ok").sum()),
         "runtime_sec": float(time.perf_counter() - started),
+        "execution_device": execution_device,
+        "acceleration_backend": acceleration_backend,
         "best_binary": best_binary,
         "best_multiclass": best_multiclass,
     }
