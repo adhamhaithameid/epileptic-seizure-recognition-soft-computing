@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -150,6 +151,7 @@ def _apply_selection(
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
+    selection_jobs: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n_features = X_train.shape[1]
     if method == "none":
@@ -189,7 +191,7 @@ def _apply_selection(
             direction="forward",
             scoring="accuracy",
             cv=2,
-            n_jobs=1,
+            n_jobs=max(1, selection_jobs),
         )
         sfs.fit(X_sel, y_sel)
         mask = sfs.get_support()
@@ -265,6 +267,48 @@ def _evaluate(
     return metrics
 
 
+def _failed_metrics_row(reason: str) -> Dict[str, object]:
+    return {
+        "accuracy": np.nan,
+        "precision": np.nan,
+        "recall": np.nan,
+        "f1": np.nan,
+        "roc_auc": np.nan,
+        "error_rate": np.nan,
+        "fit_time_sec": np.nan,
+        "predict_time_sec": np.nan,
+        "status": "failed",
+        "skip_reason": reason,
+    }
+
+
+def _evaluate_model_row(
+    model_name: str,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    binary: bool,
+) -> Dict[str, object]:
+    row = {"model": model_name}
+    try:
+        model = build_classifier(model_name)
+        metrics = _evaluate(
+            model,
+            X_train,
+            y_train,
+            X_test,
+            y_test,
+            binary=binary,
+        )
+        row.update(metrics)
+        row["status"] = "ok"
+        row["skip_reason"] = ""
+    except Exception as exc:
+        row.update(_failed_metrics_row(f"model_failed: {failure_reason(exc)}"))
+    return row
+
+
 def run_cartesian_benchmark(
     X_df: pd.DataFrame,
     y_binary: np.ndarray,
@@ -273,6 +317,8 @@ def run_cartesian_benchmark(
     io: RunnerIO,
     resume: bool = True,
     max_rows: int | None = None,
+    model_jobs: int = 1,
+    selection_jobs: int = 1,
 ) -> pd.DataFrame:
     started = time.perf_counter()
 
@@ -359,7 +405,13 @@ def run_cartesian_benchmark(
                         sel_reason = ""
                         try:
                             if reduction_ok:
-                                Xs_train, Xs_test = _apply_selection(sel_name, Xr_train, y_train, Xr_test)
+                                Xs_train, Xs_test = _apply_selection(
+                                    sel_name,
+                                    Xr_train,
+                                    y_train,
+                                    Xr_test,
+                                    selection_jobs=selection_jobs,
+                                )
                             else:
                                 selection_ok = False
                                 sel_reason = red_reason
@@ -369,66 +421,79 @@ def run_cartesian_benchmark(
                             sel_reason = f"selection_failed: {failure_reason(exc)}"
                             Xs_train, Xs_test = Xr_train, Xr_test
 
+                        model_names: List[str] = []
                         for model_name in spec.classifiers:
                             key = (track_name, fold, prep_name, red_name, sel_name, model_name)
                             if key in seen:
                                 continue
+                            model_names.append(model_name)
 
-                            row = {
-                                "track": track_name,
-                                "fold": fold,
-                                "preprocessing": prep_name,
-                                "reduction": red_name,
-                                "selection": sel_name,
-                                "model": model_name,
-                            }
+                        if max_rows is not None:
+                            remaining = max_rows - (write_count + len(records_buffer))
+                            if remaining <= 0:
+                                break
+                            model_names = model_names[:remaining]
 
-                            if not reduction_ok or not selection_ok:
-                                row.update(
-                                    {
-                                        "accuracy": np.nan,
-                                        "precision": np.nan,
-                                        "recall": np.nan,
-                                        "f1": np.nan,
-                                        "roc_auc": np.nan,
-                                        "error_rate": np.nan,
-                                        "fit_time_sec": np.nan,
-                                        "predict_time_sec": np.nan,
-                                        "status": "failed",
-                                        "skip_reason": sel_reason,
-                                    }
-                                )
-                            else:
-                                try:
-                                    model = build_classifier(model_name)
-                                    metrics = _evaluate(
-                                        model,
-                                        Xs_train,
-                                        y_train,
-                                        Xs_test,
-                                        y_test,
-                                        binary=binary,
-                                    )
-                                    row.update(metrics)
-                                    row["status"] = "ok"
-                                    row["skip_reason"] = ""
-                                except Exception as exc:
+                        base_row = {
+                            "track": track_name,
+                            "fold": fold,
+                            "preprocessing": prep_name,
+                            "reduction": red_name,
+                            "selection": sel_name,
+                        }
+
+                        if not reduction_ok or not selection_ok:
+                            for model_name in model_names:
+                                row = dict(base_row)
+                                row["model"] = model_name
+                                row.update(_failed_metrics_row(sel_reason))
+                                records_buffer.append(row)
+                        else:
+                            if model_jobs <= 1 or len(model_names) <= 1:
+                                for model_name in model_names:
+                                    row = dict(base_row)
                                     row.update(
-                                        {
-                                            "accuracy": np.nan,
-                                            "precision": np.nan,
-                                            "recall": np.nan,
-                                            "f1": np.nan,
-                                            "roc_auc": np.nan,
-                                            "error_rate": np.nan,
-                                            "fit_time_sec": np.nan,
-                                            "predict_time_sec": np.nan,
-                                            "status": "failed",
-                                            "skip_reason": f"model_failed: {failure_reason(exc)}",
-                                        }
+                                        _evaluate_model_row(
+                                            model_name=model_name,
+                                            X_train=Xs_train,
+                                            y_train=y_train,
+                                            X_test=Xs_test,
+                                            y_test=y_test,
+                                            binary=binary,
+                                        )
                                     )
+                                    records_buffer.append(row)
+                            else:
+                                result_map: Dict[str, Dict[str, object]] = {}
+                                with ThreadPoolExecutor(max_workers=min(model_jobs, len(model_names))) as ex:
+                                    futures = {
+                                        ex.submit(
+                                            _evaluate_model_row,
+                                            model_name,
+                                            Xs_train,
+                                            y_train,
+                                            Xs_test,
+                                            y_test,
+                                            binary,
+                                        ): model_name
+                                        for model_name in model_names
+                                    }
+                                    for fut in as_completed(futures):
+                                        model_name = futures[fut]
+                                        try:
+                                            result_map[model_name] = fut.result()
+                                        except Exception as exc:
+                                            result_map[model_name] = {
+                                                "model": model_name,
+                                                **_failed_metrics_row(
+                                                    f"model_failed: {failure_reason(exc)}"
+                                                ),
+                                            }
 
-                            records_buffer.append(row)
+                                for model_name in model_names:
+                                    row = dict(base_row)
+                                    row.update(result_map[model_name])
+                                    records_buffer.append(row)
 
                             if len(records_buffer) >= io.checkpoint_every:
                                 df_chk = pd.DataFrame(records_buffer)

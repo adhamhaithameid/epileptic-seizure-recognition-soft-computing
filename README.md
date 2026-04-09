@@ -125,6 +125,26 @@ python src/cli/run_experiments.py --checkpoint-every 120
 
 Do not use `--fresh` when resuming.
 
+### High-CPU mode (real parallelism)
+This project now supports explicit stage-level parallelism:
+- `--jobs`: parallel model evaluations per stage
+- `--selection-jobs`: parallel workers inside wrapper SFS
+
+Use this on high-core laptops:
+```bash
+source .venv311/bin/activate
+CORES=$(nproc)
+
+# When using --jobs > 1, avoid nested thread oversubscription:
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+systemd-inhibit --what=sleep:idle --why="Soft computing full benchmark" \
+bash -lc "source .venv311/bin/activate && python src/cli/run_experiments.py --fresh --checkpoint-every 120 --jobs $CORES --selection-jobs $CORES"
+```
+
 ## Run from Colab
 1. Open the Colab link above.
 2. Run all cells from top to bottom.

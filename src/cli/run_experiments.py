@@ -110,6 +110,18 @@ def main() -> None:
     parser.add_argument("--max-rows", type=int, default=None, help="Optional cap for smoke testing.")
     parser.add_argument("--checkpoint-every", type=int, default=100)
     parser.add_argument("--fresh", action="store_true", help="Start fresh and overwrite old metrics file.")
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="Parallel model-evaluation workers per stage (default: 1).",
+    )
+    parser.add_argument(
+        "--selection-jobs",
+        type=int,
+        default=1,
+        help="Parallel workers for wrapper SFS internal CV (default: 1).",
+    )
     args = parser.parse_args()
 
     X_df, y_multi, y_binary = load_dataset()
@@ -139,6 +151,8 @@ def main() -> None:
         io=io,
         resume=not args.fresh,
         max_rows=args.max_rows,
+        model_jobs=max(1, args.jobs),
+        selection_jobs=max(1, args.selection_jobs),
     )
 
     ok = df[df["status"] == "ok"].copy()
@@ -164,6 +178,8 @@ def main() -> None:
     print(f"Saved multiclass rankings: {saved['multiclass']}")
     print(f"Saved comparison report: {saved['report']}")
     print(f"Saved plots: {len(plots)}")
+    print(f"Model jobs: {max(1, args.jobs)}")
+    print(f"Selection jobs: {max(1, args.selection_jobs)}")
 
 
 if __name__ == "__main__":
