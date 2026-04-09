@@ -8,19 +8,27 @@ Epileptic Seizure Recognition with a Full Cartesian Soft Computing Benchmark
 - Semester: Spring 2026
 
 ## Abstract
-This project presents an end-to-end soft computing workflow for epileptic seizure recognition using a fully refactored and reproducible Cartesian benchmark pipeline. The workflow covers all required stages: preprocessing, feature reduction, feature selection, classification, evaluation, visualization, and paper-ready reporting.
+Epileptic seizure recognition from EEG signals remains challenging because EEG is noisy, non-stationary, and difficult to compare fairly across heterogeneous pipelines. This study presents a reproducible soft-computing benchmark framework that evaluates preprocessing, feature reduction, feature selection, and classification in one deterministic Cartesian engine.
 
-Two prediction tracks are evaluated: binary seizure detection and multiclass classification. The benchmark combines four preprocessing methods, four reduction options, eight selection strategies, and six classifiers under three-fold stratified cross-validation. This yields 1,536 unique method combinations and 4,608 fold-level evaluations.
+The benchmark evaluates two tracks (binary and multiclass) using four preprocessing methods, four reduction options, eight selection strategies, and six classifiers under 3-fold stratified cross-validation. This design yields 1,536 unique pipelines and 4,608 fold-level evaluations. Invalid combinations are handled through safe auto-fix and skip logging (`status`, `skip_reason`) to preserve run continuity and auditability.
 
-Invalid combinations are handled safely through auto-fix and skip logging (`status`, `skip_reason`) so execution continues and coverage remains auditable. Final outputs include per-combination metrics, ranking tables, baseline deltas, comparison reports, and figure suites (heatmaps, top-N bars, fold-variance, ROC for top binary pipelines).
+In the validated full run on Apple Silicon M1, all 4,608 fold evaluations were processed (`4392` successful, `216` safely skipped/failed). The best binary configuration was `svm + quantile + pca + none` (`accuracy=0.976261`, `f1=0.939349`, `roc_auc=0.995438`), and the best multiclass configuration was `mlp_ann + minmax + pca + none` (`accuracy=0.685651`, `f1=0.685026`). The framework produces standardized metrics, rankings, plots, and paper-ready drafts, enabling transparent and reproducible comparison for course-scale and research-scale experimentation.
 
 ## Keywords
 Soft Computing, Epileptic Seizure Recognition, Cartesian Benchmark, Feature Reduction, Feature Selection, Genetic Algorithm, Classification
 
 ## 1. Introduction
-Epileptic seizure recognition is a high-impact classification problem where robust machine learning can support decision making in neurological analysis. A key challenge in course projects is not only obtaining good accuracy, but proving fair and reproducible comparisons across many techniques.
+Epileptic seizure recognition is a high-impact classification problem in biomedical signal processing, where robust automation can support neurologists in early and reliable decision-making. Although many studies report strong results on seizure datasets, practical reproducibility remains difficult because pipelines vary widely in preprocessing, feature engineering, model selection, and evaluation protocol [R1]-[R8]. This makes direct method-to-method comparison less transparent and often non-repeatable.
 
-To address this, the project was redesigned as a Cartesian benchmark framework where each method family is explicitly enumerated and evaluated under a common protocol. This allows direct, transparent comparison between preprocessing, reduction, selection, and model choices.
+Foundational EEG benchmark studies and patient-specific seizure-detection works [R9], [R10] have motivated a large body of classical and modern machine-learning approaches. However, course projects still face a recurring gap: moving from isolated model experiments to a complete and auditable comparative framework that can test multiple soft-computing stages under a single protocol.
+
+To address this gap, this project introduces a fully refactored Cartesian benchmark framework for the Epileptic Seizure Recognition dataset. The main contributions are:
+1. A deterministic staged evaluation engine covering preprocessing, reduction, selection, and classification families in one run (`1536` unique pipelines, `4608` fold evaluations).
+2. A dual-track protocol (binary and multiclass) with standardized metrics, timing statistics, and reproducible output schemas.
+3. Robust execution logic with safe handling of mathematically invalid combinations through skip-reason logging instead of pipeline termination.
+4. End-to-end reporting artifacts (rankings, deltas, plots, and draft sections) that map directly to research-paper writing requirements.
+
+This structure enables fairer comparison between techniques and provides a practical template for reproducible soft-computing experimentation.
 
 ## 2. Related Work
 Recent seizure-detection studies span classical machine learning, hybrid feature engineering, and deep-learning-assisted classifiers. Reported performance is often high on Bonn EEG and CHB-MIT variants, but direct comparison remains difficult because preprocessing, feature pipelines, and validation protocols vary across papers.
@@ -154,12 +162,15 @@ This pattern indicates the failure handling behaved as intended: invalid low-dim
 - Wrapper/embedded selectors did not consistently beat the `none` selection baseline in top-ranked rows for this dataset, suggesting that strong preprocessing/reduction choices contributed more than aggressive selection in this run.
 
 ## 6. Conclusion and Future Work
-This project delivers a complete, reproducible soft-computing benchmark that evaluates all requested method families in one framework. The refactor improves traceability, output organization, and experimental rigor by enforcing full Cartesian accounting and standardized schemas.
+This project delivers a complete and reproducible soft-computing benchmark for epileptic seizure recognition, unifying all requested method families in a single Cartesian framework. The final run achieved full accounting (`4608/4608` fold evaluations), with safe continuation despite invalid edge-case combinations (`216` skip/failed rows logged with explicit reasons). This demonstrates both methodological coverage and execution robustness.
+
+Empirically, binary performance was strongest with SVM-based pipelines, while multiclass performance was strongest with MLP/ANN-based pipelines under `minmax + pca`. These outcomes suggest that, for this dataset, preprocessing and reduction choices contributed more consistently to top-ranked performance than aggressive wrapper/embedded selection in most high-performing combinations.
 
 Future work:
-1. Add hyperparameter optimization for top-ranked combinations.
-2. Expand to additional datasets from the course list.
-3. Add statistical significance tests between top pipelines.
+1. Perform targeted hyperparameter optimization on the best-performing pipeline families per track.
+2. Add statistical significance testing (for example, paired tests across folds) for top-ranked methods.
+3. Extend benchmarking to additional course datasets to evaluate cross-dataset generalization.
+4. Add deployment-oriented profiling (latency/memory) for real-time or edge inference scenarios.
 
 ## 7. References
 [R1] Siddiqui, M. K., Morales-Menendez, R., Huang, X., & Hussain, N. (2020). A review of epileptic seizure detection using machine learning classifiers. *Brain Informatics, 7*(1), Article 5. https://doi.org/10.1186/s40708-020-00105-1
