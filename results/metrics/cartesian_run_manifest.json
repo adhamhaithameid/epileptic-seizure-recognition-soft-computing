@@ -3,7 +3,9 @@
   "expected_fold_evals": 4608,
   "completed_ok": 4392,
   "skipped_or_failed": 216,
-  "runtime_sec": 6360.538297416002,
+  "runtime_sec": 5294.2593472920125,
+  "execution_device": "cpu",
+  "acceleration_backend": "none",
   "best_binary": {
     "track": "binary",
     "preprocessing": "quantile",
