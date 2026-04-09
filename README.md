@@ -31,7 +31,7 @@ This repository contains a refactored Soft Computing course project for **Epilep
 
 ## Run on Any Laptop (Exact Steps)
 
-### A) Arch Linux (RTX 3050 laptop)
+### A) Linux (NVIDIA GPU optional)
 ```bash
 # 1) System dependencies
 sudo pacman -Syu --needed git python python-pip base-devel
