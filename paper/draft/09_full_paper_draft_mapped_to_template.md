@@ -34,6 +34,8 @@ To address this gap, this project introduces a fully refactored Cartesian benchm
 
 This structure enables fairer comparison between techniques and provides a practical template for reproducible soft-computing experimentation.
 
+Paper organization: Section 2 summarizes related work, Section 3 details methodology, Section 4 describes the staged model design, Section 5 reports preprocessing/reduction/selection/classification results with statistical tests and confusion-matrix analysis, and Section 6 concludes with future directions.
+
 ## 2. Related Work
 Recent seizure-detection studies span classical machine learning, hybrid feature engineering, and deep-learning-assisted classifiers. Reported performance is often high on Bonn EEG and CHB-MIT variants, but direct comparison remains difficult because preprocessing, feature pipelines, and validation protocols vary across papers.
 
@@ -90,9 +92,11 @@ Recent seizure-detection studies span classical machine learning, hybrid feature
 - `mlp_ann`
 
 ### 3.6 Evaluation Protocol
-- 3-fold stratified CV
+- 3-fold stratified CV (primary Cartesian protocol)
+- Additional 80/20 train-test holdout (secondary protocol for confusion-matrix comparison)
 - Metrics: accuracy, precision, recall, f1, roc_auc (binary), error_rate
 - Runtime metrics: fit and prediction time
+- Confusion matrix terms recorded for holdout comparison: TN, FP, FN, TP
 - Failure handling: logged per fold with `status` and `skip_reason`
 
 ## 4. Proposed Model
@@ -110,15 +114,56 @@ Combination math:
 - Fold evaluations = `1536 x 3 = 4608`
 
 ## 5. Results and Discussion
-### 5.1 Required result files
+### 5.1 Data Set Description
+The Epileptic Seizure Recognition dataset contains `11,500` samples and `178` numeric predictor features. The target has five classes in its original form, and this study uses two tracks: (1) binary seizure vs non-seizure and (2) multiclass seizure-state recognition. Data cleaning was applied by coercing non-numeric values to numeric and imputing missing feature values with median values per feature.
+
+### 5.2 Required Result Files
 - `results/metrics/cartesian_metrics_all.csv`
 - `results/metrics/cartesian_run_manifest.json`
 - `results/tables/cartesian_summary_by_combo.csv`
 - `results/tables/cartesian_rankings_binary.csv`
 - `results/tables/cartesian_rankings_multiclass.csv`
 - `results/reports/cartesian_comparison_report.md`
+- `results/tables/dataset_descriptive_stats.csv`
+- `results/tables/covariance_matrix.csv`
+- `results/tables/correlation_matrix.csv`
+- `results/tables/statistical_tests_summary.csv`
+- `results/tables/holdout_80_20_binary_classifier_comparison.csv`
+- `results/tables/holdout_overfit_analysis.csv`
 
-### 5.2 Full Run Snapshot (April 9, 2026, M1 CPU)
+### 5.3 Preprocessing Phase Results
+#### 5.3.1 Data Visualization, Missing Values, and Binning
+- Data visualization was performed through the correlation heat map (`results/figures/correlation_heatmap.png`) and stage-level benchmark plots in `results/figures/cartesian_*.png`.
+- Missing values were handled by median imputation after numeric coercion; no residual missing values remained for model input.
+- A binning process was used for chi-square statistical testing by applying quantile-based bins (quintiles) on selected high-variance features.
+
+#### 5.3.2 Descriptive Statistics and Matrix Analysis
+Descriptive statistics (min, max, mean, variance, standard deviation, skewness, kurtosis) were computed for all `178` features and stored in `results/tables/dataset_descriptive_stats.csv`.
+Examples:
+- `X1`: min `-1839`, max `1726`, mean `-11.58`, variance `27432.07`, std `165.63`, skewness `-0.454`, kurtosis `19.07`.
+- `X2`: min `-1838`, max `1713`, mean `-10.91`, variance `27575.79`, std `166.06`, skewness `-0.432`, kurtosis `18.30`.
+
+Covariance and correlation matrices were generated (`results/tables/covariance_matrix.csv`, `results/tables/correlation_matrix.csv`) and visualized with a heat map. These analyses confirmed strong inter-feature dependency patterns, motivating dimensionality reduction and feature selection phases.
+
+#### 5.3.3 Statistical Tests (Chi-square, t-test, ANOVA)
+From `results/tables/statistical_tests_summary.csv`, three high-variance features were analyzed:
+- `X101`: t-test p-value `0.5557`, ANOVA p-value `0.2358`, chi-square p-value `< 1e-10`.
+- `X48`: t-test p-value `0.8377`, ANOVA p-value `0.7444`, chi-square p-value `< 1e-10`.
+- `X102`: t-test p-value `0.2781`, ANOVA p-value `0.0906`, chi-square p-value `< 1e-10`.
+
+Interpretation: linear mean-difference tests (t-test/ANOVA) were weak for these specific features, while chi-square on binned distributions detected strong class-related distribution shifts.
+
+### 5.4 Feature Reduction and Feature Selection Results
+The Cartesian results show that dimensionality-reduction impact differs by track:
+- Binary track mean accuracy by reduction: `none (0.8973)`, `pca (0.8964)`, `svd (0.8934)`, `lda_projection (0.8384)`.
+- Multiclass track mean accuracy by reduction: `pca (0.4337)`, `svd (0.4210)`, `none (0.3995)`, `lda_projection (0.3095)`.
+
+Interpretation:
+- PCA and SVD improved multiclass general behavior versus no reduction.
+- LDA projection was the weakest reduction in both tracks for this dataset under the tested classifier mix.
+- Feature-selection behavior was mixed: wrapper methods were strong on binary means, while `none`/filter methods remained competitive on multiclass means.
+
+### 5.5 Full Run Snapshot (April 9, 2026, M1 CPU)
 - Total fold evaluations: `4608 / 4608`
 - Successful rows: `4392`
 - Skipped/failed rows: `216`
@@ -132,7 +177,7 @@ Best pipelines from `cartesian_run_manifest.json`:
 - Multiclass: `mlp_ann + minmax + pca + none`  
   `accuracy=0.685651`, `precision=0.685624`, `recall=0.685660`, `f1=0.685026`
 
-### 5.3 Top-Ranked Pipelines (Accuracy)
+### 5.6 Top-Ranked Pipelines (Cartesian Accuracy)
 Binary track (top 5):
 
 | Rank | Preprocessing | Reduction | Selection | Model | Accuracy | F1 | Delta vs baseline accuracy |
@@ -153,7 +198,29 @@ Multiclass track (top 5):
 | 4 | standard | pca | none | mlp_ann | 0.670869 | 0.671112 | -0.003826 |
 | 5 | robust | none | none | mlp_ann | 0.669740 | 0.670368 | -0.004956 |
 
-### 5.4 Failure and Skip Analysis
+### 5.7 80/20 Holdout Split Results and Confusion Matrix Comparison
+In addition to K-fold results, an explicit `80% train / 20% test` binary experiment was executed (`results/tables/holdout_80_20_binary_classifier_comparison.csv`).
+
+| Model | Accuracy | Error Rate | Precision | Recall | F1 | ROC AUC | TN | FP | FN | TP |
+|:--|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| mlp_ann | 0.9743 | 0.0257 | 0.9546 | 0.9152 | 0.9345 | 0.9887 | 1820 | 20 | 39 | 421 |
+| svm | 0.9709 | 0.0291 | 0.9538 | 0.8978 | 0.9250 | 0.9965 | 1820 | 20 | 47 | 413 |
+| decision_tree | 0.9422 | 0.0578 | 0.8978 | 0.8022 | 0.8473 | 0.8592 | 1798 | 42 | 91 | 369 |
+| knn | 0.9317 | 0.0683 | 0.9935 | 0.6630 | 0.7953 | 0.9218 | 1838 | 2 | 155 | 305 |
+| lda_classifier | 0.8213 | 0.1787 | 0.9298 | 0.1152 | 0.2050 | 0.4979 | 1836 | 4 | 407 | 53 |
+| logistic_regression | 0.8157 | 0.1843 | 0.9500 | 0.0826 | 0.1520 | 0.4997 | 1838 | 2 | 422 | 38 |
+
+This table provides confusion-matrix components and requested metrics (accuracy, error rate, precision, recall, F-measure, ROC) for each classifier.
+
+### 5.8 Overfitting and Underfitting Interpretation
+From `results/tables/holdout_overfit_analysis.csv`, generalization gaps (train accuracy minus test accuracy) were:
+- Decision Tree: `0.0410` (moderate overfitting tendency).
+- MLP: `0.0257` (mild overfitting).
+- SVM, KNN, Logistic Regression, and LDA classifier: mild gaps.
+
+Underfitting signals were visible for Logistic Regression and LDA classifier because both train and test accuracies stayed low relative to SVM/MLP, suggesting limited model capacity for this feature space under default hyperparameters.
+
+### 5.9 Failure and Skip Analysis
 All `216` non-OK rows were safe failures in feature selection edge cases:
 - `72`: SequentialFeatureSelector requires at least 2 features (`shape=(700, 1)` after prior stages).
 - `72`: `n_features_to_select` must be strictly less than available features.
@@ -162,10 +229,12 @@ All `216` non-OK rows were safe failures in feature selection edge cases:
 
 This pattern indicates the failure handling behaved as intended: invalid low-dimensional combinations were logged and skipped without stopping the full benchmark.
 
-### 5.5 Discussion
-- Binary performance was dominated by SVM variants, especially with `quantile` preprocessing and no extra selection.
-- Multiclass performance was dominated by MLP/ANN, with a clear gain from `minmax + pca` over the multiclass baseline.
-- Wrapper/embedded selectors did not consistently beat the `none` selection baseline in top-ranked rows for this dataset, suggesting that strong preprocessing/reduction choices contributed more than aggressive selection in this run.
+### 5.10 Discussion
+- Binary performance was dominated by SVM and MLP variants, with strong precision-recall balance in both Cartesian and holdout analyses.
+- Multiclass performance was strongest with MLP under `minmax + pca`, supporting the value of reduction before multiclass classification.
+- Wrapper/embedded selectors were useful in specific binary settings but did not universally dominate multiclass outcomes.
+- The added holdout and confusion-matrix analyses provide a more complete practical view than a single aggregate accuracy score.
+
 
 ## 6. Conclusion and Future Work
 This project delivers a complete and reproducible soft-computing benchmark for epileptic seizure recognition, unifying all requested method families in a single Cartesian framework. The final run achieved full accounting (`4608/4608` fold evaluations), with safe continuation despite invalid edge-case combinations (`216` skip/failed rows logged with explicit reasons). This demonstrates both methodological coverage and execution robustness.

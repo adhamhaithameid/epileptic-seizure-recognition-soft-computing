@@ -114,6 +114,9 @@ Validation report:
 
 ## 8) Colab Notebook
 - `notebooks/colab/epileptic_seizure_full_pipeline_colab.ipynb`
+- Notebook supports both environments:
+  - `RUN_ENV = "colab"` for Google Colab
+  - `RUN_ENV = "local"` for local Jupyter execution
 
 ## 9) Paper Assets
 - Template: `paper/template/`

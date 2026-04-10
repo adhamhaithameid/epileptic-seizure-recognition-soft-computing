@@ -8,15 +8,20 @@
 1. Open the URL above.
 2. Set runtime to Python 3.
 3. Run all cells in order.
-4. Choose full run (`SMOKE_TEST=False`) or smoke run (`SMOKE_TEST=True`) in the config cell.
+4. In the environment cell, set `RUN_ENV = "colab"` for Colab (or `"local"` for local Jupyter).
+5. In the config cell, choose `RUN_PROFILE`:
+   - `local_smoke` (quick)
+   - `local_medium` (partial)
+   - `full` (all 4608 fold evaluations)
 
 ## What the notebook executes
-- installs dependencies
+- sets up environment (colab or local)
+- installs dependencies (in colab mode)
 - loads repo/workspace
 - loads dataset and builds binary + multiclass tracks
 - runs full Cartesian benchmark across all configured stages
 - writes metrics/tables/figures/report
-- zips outputs into `colab_outputs.zip`
+- optionally zips outputs into `colab_outputs.zip` (colab mode)
 
 ## Expected full-run counts
 - `expected_combos = 1536`
