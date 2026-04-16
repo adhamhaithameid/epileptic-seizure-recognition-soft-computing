@@ -1,50 +1,107 @@
+#!/usr/bin/env python3
 """
-Phase 1 Soft Computing Pipeline (Epileptic Dataset, Binary Target)
+Phase 1 Soft Computing Pipeline (Rubric-Aligned)
 
-Dataset explanation:
-- Source file: epileptic_seizure_data.csv
-- Shape: 11,500 rows, 180 columns in the raw file
-- Columns: unnamed index-like column + X1..X178 features + y label
-- Original labels: y in {1,2,3,4,5}, balanced at 2,300 rows per class
-- Binary mapping used in this migrated project:
-  - Positive class (Seizure)     -> y == 1
-  - Negative class (Non-seizure) -> y in {2,3,4,5}
+This script is aligned to the "Math for Data Science Project Tasks Cover Sheet"
+requirements and keeps the project in a flat structure.
 
-Why this mapping:
-- It preserves the prior project convention for seizure-vs-non-seizure analysis,
-  while keeping the compact "new stuff" project structure and workflow style.
+Rubric-oriented coverage in this file:
+1) Preprocessing
+   - Data visualization
+   - Missing values treatment
+   - Binning process
+   - Descriptive statistics (min/max/mean/variance/std/skewness/kurtosis)
+   - Covariance / correlation / heatmap
+   - Chi-square test, t-test, ANOVA
+2) Feature reduction and selection
+   - LDA projection
+   - PCA and Kernel PCA
+   - SVD
+   - Basic feature selection examples
+3) Model implementations
+   - Naive Bayesian
+   - Bayesian Belief Network (discrete BN structure)
+   - Decision Tree (entropy)
+   - LDA classifier
+   - Neural Network (feed-forward)
+   - K-NN (Euclidean + Manhattan)
+   - Logistic regression
+   - Linear regression (rubric regression metrics section)
+4) Evaluation and interpretation
+   - 80/20 split
+   - K-fold CV average accuracy
+   - Confusion matrix, accuracy, error, precision, recall, F1, ROC/AUC
+   - Regression metrics (MAE, RMSE, R2, Willmott, NSE, Legates-McCabe)
+   - Overfitting/underfitting learning curves + interpretation
+5) Final charts shown after final comparison output
 """
 
-import pandas as pd
-import urllib.request
+from __future__ import annotations
+
 import os
-import numpy as np
-import matplotlib
+import urllib.request
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 
-matplotlib.use("Agg")
+import numpy as np
+import pandas as pd
+from scipy import stats
+
+
+def _running_in_notebook() -> bool:
+    try:
+        from IPython import get_ipython
+
+        ip = get_ipython()
+        return ip is not None and "IPKernelApp" in ip.config
+    except Exception:
+        return False
+
+
+if not _running_in_notebook():
+    import matplotlib
+
+    matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split, KFold, cross_val_score
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
+
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.decomposition import PCA, KernelPCA, TruncatedSVD
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as SKLDA
-from sklearn.naive_bayes import GaussianNB
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.feature_selection import SelectKBest, chi2, f_classif
+from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
-    confusion_matrix,
-    classification_report,
-    roc_curve,
     auc,
+    classification_report,
+    confusion_matrix,
     f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_score,
+    r2_score,
+    recall_score,
+    roc_curve,
 )
-from scipy import stats
+from sklearn.model_selection import (
+    StratifiedKFold,
+    cross_val_score,
+    learning_curve,
+    train_test_split,
+)
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import KBinsDiscretizer, MinMaxScaler, StandardScaler
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.feature_selection import RFE
 
-# --- CELL 1: Data Loading & Target Encoding ---
 
-sns.set_style("whitegrid")
+RANDOM_STATE = 42
+TEST_SIZE = 0.2
+CV_SPLITS = 5
+
 DATA_PATH = "epileptic_seizure_data.csv"
 DATA_URL_CANDIDATES = [
     "https://raw.githubusercontent.com/adhamhaithameid/epileptic-seizure-recognition/experimental/new-stuff-migration/epileptic_seizure_data.csv",
@@ -52,247 +109,712 @@ DATA_URL_CANDIDATES = [
     "https://raw.githubusercontent.com/akshayg056/Epileptic-seizure-detection-/master/data.csv",
 ]
 
-if not os.path.exists(DATA_PATH):
-    print(f"Local dataset not found: {DATA_PATH}. Attempting download...")
-    downloaded = False
+
+class DiscreteBBNClassifier(BaseEstimator, ClassifierMixin):
+    """
+    Simple Bayesian Belief Network classifier with a naive BN structure:
+    Target -> Feature_i for all selected/discretized features.
+
+    This is a discrete Bayesian network implementation for classification
+    that supports fit/predict/predict_proba and can be used in cross-validation.
+    """
+
+    def __init__(self, n_bins: int = 4, max_features: int = 20, alpha: float = 1.0):
+        self.n_bins = n_bins
+        self.max_features = max_features
+        self.alpha = alpha
+
+    def fit(self, X, y):
+        X = np.asarray(X)
+        y = np.asarray(y).astype(int)
+
+        k = min(self.max_features, X.shape[1])
+        self.selector_ = SelectKBest(score_func=f_classif, k=k)
+        X_sel = self.selector_.fit_transform(X, y)
+
+        self.discretizer_ = KBinsDiscretizer(
+            n_bins=self.n_bins,
+            encode="ordinal",
+            strategy="quantile",
+        )
+        X_disc = self.discretizer_.fit_transform(X_sel).astype(int)
+
+        self.classes_ = np.unique(y)
+        n_classes = len(self.classes_)
+        n_features = X_disc.shape[1]
+
+        class_counts = np.array([(y == c).sum() for c in self.classes_], dtype=float)
+        class_priors = (class_counts + self.alpha) / (
+            class_counts.sum() + self.alpha * n_classes
+        )
+        self.class_log_prior_ = np.log(class_priors)
+
+        self.feature_log_prob_ = np.zeros((n_classes, n_features, self.n_bins), dtype=float)
+
+        for ci, c in enumerate(self.classes_):
+            Xc = X_disc[y == c]
+            for fj in range(n_features):
+                counts = np.bincount(Xc[:, fj], minlength=self.n_bins).astype(float)
+                probs = (counts + self.alpha) / (
+                    counts.sum() + self.alpha * self.n_bins
+                )
+                self.feature_log_prob_[ci, fj, :] = np.log(probs)
+
+        return self
+
+    def _transform(self, X):
+        X = np.asarray(X)
+        X_sel = self.selector_.transform(X)
+        X_disc = self.discretizer_.transform(X_sel).astype(int)
+        X_disc = np.clip(X_disc, 0, self.n_bins - 1)
+        return X_disc
+
+    def predict_log_proba(self, X):
+        X_disc = self._transform(X)
+        n_samples = X_disc.shape[0]
+        n_classes = len(self.classes_)
+
+        logp = np.tile(self.class_log_prior_, (n_samples, 1))
+        for ci in range(n_classes):
+            for fj in range(X_disc.shape[1]):
+                logp[:, ci] += self.feature_log_prob_[ci, fj, X_disc[:, fj]]
+
+        max_logp = np.max(logp, axis=1, keepdims=True)
+        stabilized = logp - max_logp
+        logsumexp = max_logp + np.log(np.sum(np.exp(stabilized), axis=1, keepdims=True))
+        return logp - logsumexp
+
+    def predict_proba(self, X):
+        return np.exp(self.predict_log_proba(X))
+
+    def predict(self, X):
+        probs = self.predict_proba(X)
+        idx = np.argmax(probs, axis=1)
+        return self.classes_[idx]
+
+
+@dataclass
+class RegressionMetrics:
+    mae: float
+    rmse: float
+    r2: float
+    willmott_d: float
+    nse: float
+    legates_mccabe: float
+
+
+def _safe_div(num: float, den: float, eps: float = 1e-12) -> float:
+    return float(num) / float(den + eps)
+
+
+def willmott_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    y_mean = np.mean(y_true)
+    num = np.sum((y_pred - y_true) ** 2)
+    den = np.sum((np.abs(y_pred - y_mean) + np.abs(y_true - y_mean)) ** 2)
+    return 1.0 - _safe_div(num, den)
+
+
+def nash_sutcliffe_efficiency(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    y_mean = np.mean(y_true)
+    num = np.sum((y_true - y_pred) ** 2)
+    den = np.sum((y_true - y_mean) ** 2)
+    return 1.0 - _safe_div(num, den)
+
+
+def legates_mccabe_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    y_mean = np.mean(y_true)
+    num = np.sum(np.abs(y_true - y_pred))
+    den = np.sum(np.abs(y_true - y_mean))
+    return 1.0 - _safe_div(num, den)
+
+
+def _show_or_close(show_plots: bool):
+    if show_plots:
+        plt.show()
+    else:
+        plt.close()
+
+
+def ensure_dataset_available(data_path: str = DATA_PATH) -> str:
+    if os.path.exists(data_path):
+        return data_path
+
+    print(f"Local dataset not found: {data_path}. Attempting download...")
     for url in DATA_URL_CANDIDATES:
         try:
-            urllib.request.urlretrieve(url, DATA_PATH)
+            urllib.request.urlretrieve(url, data_path)
             print(f"Downloaded dataset from: {url}")
-            downloaded = True
-            break
+            return data_path
         except Exception as exc:
             print(f"Failed URL: {url} -> {exc}")
 
-    if not downloaded:
-        print("Error: unable to find or download epileptic_seizure_data.csv")
-        raise SystemExit(1)
-
-df = pd.read_csv(DATA_PATH)
-
-# Drop unnamed index-like columns (e.g., '', 'Unnamed: 0').
-unnamed_cols = [c for c in df.columns if c == "" or str(c).startswith("Unnamed")]
-if unnamed_cols:
-    df = df.drop(columns=unnamed_cols)
-
-target_col = "y" if "y" in df.columns else df.columns[-1]
-X = df.drop(columns=[target_col]).copy()
-
-# Ensure numeric features.
-for col in X.columns:
-    X[col] = pd.to_numeric(X[col], errors="coerce")
-
-y_raw = pd.to_numeric(df[target_col], errors="coerce")
-y_binary = (y_raw == 1).astype(int)
-class_names = ["Non-Seizure (y=2-5)", "Seizure (y=1)"]
-
-print("Target mapping: seizure=1 if y==1 else non-seizure=0")
-print("Raw shape:", df.shape)
-print("Feature shape:", X.shape)
-print("Binary class distribution:")
-print(y_binary.value_counts().sort_index())
-
-# --- CELL 2: Data Cleaning & Statistical Summary ---
-
-print("\n--- Missing Values ---")
-print(X.isnull().sum().sum(), "total missing values")
-for col in X.columns:
-    if X[col].isnull().any():
-        X[col] = X[col].fillna(X[col].mean())
-
-print("\n--- Descriptive Statistics (first 12 features) ---")
-print(X.iloc[:, :12].describe())
-
-print("\n--- Skewness and Kurtosis (first 20 features) ---")
-print(X.skew().head(20))
-print(X.kurt().head(20))
-
-# --- CELL 3: Correlation, Covariance & ANOVA ---
-
-print("\n--- Covariance Matrix (first 12x12 block) ---")
-cov_matrix = X.cov()
-print(cov_matrix.iloc[:12, :12])
-
-print("\n--- Correlation Matrix (first 12x12 block) ---")
-corr_matrix = X.corr()
-print(corr_matrix.iloc[:12, :12])
-
-plt.figure(figsize=(12, 10))
-subset_cols = X.columns[:20]
-sns.heatmap(corr_matrix.loc[subset_cols, subset_cols], annot=False, cmap="coolwarm")
-plt.title("Correlation Heatmap (First 20 Features)")
-plt.tight_layout()
-plt.show()
-
-print("\n--- ANOVA Tests (Feature vs. Binary Target) ---")
-for col in X.columns:
-    g0 = X.loc[y_binary == 0, col]
-    g1 = X.loc[y_binary == 1, col]
-    try:
-        f_stat, p_value = stats.f_oneway(g0, g1)
-        print(f"ANOVA for {col}: F-stat={f_stat:.4f}, P-value={p_value:.6f}")
-    except ValueError as exc:
-        print(f"Could not perform ANOVA for {col}: {exc}")
-
-# --- CELL 4: Scaling + PCA + LDA Projection ---
-
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-
-pca = PCA(n_components=2)
-X_pca = pca.fit_transform(X_scaled)
-print(f"\nPCA Explained Variance (2 components): {pca.explained_variance_ratio_.sum():.4f}")
-
-lda_proj = SKLDA(n_components=1)
-X_lda = lda_proj.fit_transform(X_scaled, y_binary)
-print(f"LDA projection components created: {X_lda.shape[1]}")
-
-# --- CELL 5: Train/Test Split & Model Setup ---
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X_scaled,
-    y_binary.to_numpy(),
-    test_size=0.2,
-    random_state=42,
-    stratify=y_binary,
-)
-
-models = {
-    "Naive Bayesian": GaussianNB(),
-    "Decision Tree (Entropy)": DecisionTreeClassifier(criterion="entropy", random_state=42),
-    "K-NN (Euclidean)": KNeighborsClassifier(n_neighbors=5, p=2),
-    "K-NN (Manhattan)": KNeighborsClassifier(n_neighbors=5, p=1),
-    "LDA Classifier": SKLDA(),
-    "PCA + K-NN": KNeighborsClassifier(n_neighbors=5),
-}
-
-results = {}
-kfold = KFold(n_splits=10, shuffle=True, random_state=42)
-
-print("\n--- 5. MODEL IMPLEMENTATION AND EVALUATION ---")
-
-# --- CELL 6: Model Training, Evaluation, ROC ---
-
-for name, model in models.items():
-    print(f"\n--- Model: {name} ---")
-
-    if "PCA" in name:
-        pca_step = PCA(n_components=2)
-        X_train_model = pca_step.fit_transform(X_train)
-        X_test_model = pca_step.transform(X_test)
-        cv_scores = cross_val_score(model, X_train_model, y_train, cv=kfold, scoring="accuracy")
-    elif "LDA Classifier" in name:
-        lda_step = SKLDA(n_components=1)
-        X_train_model = lda_step.fit_transform(X_train, y_train)
-        X_test_model = lda_step.transform(X_test)
-        cv_scores = cross_val_score(model, X_train_model, y_train, cv=kfold, scoring="accuracy")
-    else:
-        X_train_model = X_train
-        X_test_model = X_test
-        cv_scores = cross_val_score(model, X_train_model, y_train, cv=kfold, scoring="accuracy")
-
-    results[name] = {"CV_Accuracy": float(cv_scores.mean())}
-    print(f"K-fold Cross-Validation Avg Accuracy: {cv_scores.mean():.4f}")
-
-    model.fit(X_train_model, y_train)
-    y_pred = model.predict(X_test_model)
-
-    acc = accuracy_score(y_test, y_pred)
-    err_rate = 1 - acc
-    f1 = f1_score(y_test, y_pred, average="binary", zero_division=0)
-    report = classification_report(
-        y_test,
-        y_pred,
-        target_names=class_names,
-        output_dict=True,
-        zero_division=0,
+    raise FileNotFoundError(
+        "Could not find or download epileptic_seizure_data.csv from configured URLs."
     )
 
-    results[name].update(
+
+def load_dataset(data_path: str = DATA_PATH) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    csv_path = ensure_dataset_available(data_path)
+    df = pd.read_csv(csv_path)
+
+    unnamed_cols = [c for c in df.columns if c == "" or str(c).startswith("Unnamed")]
+    if unnamed_cols:
+        df = df.drop(columns=unnamed_cols)
+
+    target_col = "y" if "y" in df.columns else df.columns[-1]
+    X = df.drop(columns=[target_col]).copy()
+    for col in X.columns:
+        X[col] = pd.to_numeric(X[col], errors="coerce")
+
+    y_raw = pd.to_numeric(df[target_col], errors="coerce").fillna(0).astype(int)
+    y_binary = (y_raw == 1).astype(int)
+
+    return df, X, y_raw, y_binary
+
+
+def preprocessing_section(X: pd.DataFrame, y_binary: pd.Series, show_plots: bool) -> Dict[str, pd.DataFrame]:
+    print("\n=== [RUBRIC] PREPROCESSING ===")
+
+    print("\n[RUBRIC] Missing Values Treatment")
+    missing_before = int(X.isnull().sum().sum())
+    X_clean = X.copy()
+    X_clean = X_clean.fillna(X_clean.mean(numeric_only=True))
+    missing_after = int(X_clean.isnull().sum().sum())
+    print(f"Missing values before: {missing_before}")
+    print(f"Missing values after : {missing_after}")
+
+    print("\n[RUBRIC] Data Visualization: Class Distribution")
+    class_counts = y_binary.value_counts().sort_index()
+    plt.figure(figsize=(6, 4))
+    sns.barplot(x=["Non-Seizure (0)", "Seizure (1)"], y=class_counts.values, palette="Set2")
+    plt.title("Binary Class Distribution")
+    plt.ylabel("Count")
+    plt.tight_layout()
+    _show_or_close(show_plots)
+
+    print("\n[RUBRIC] Data Visualization: Feature Histograms")
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    for ax, col in zip(axes.ravel(), X_clean.columns[:4]):
+        sns.histplot(X_clean[col], kde=True, ax=ax, color="#2a9d8f")
+        ax.set_title(f"Distribution: {col}")
+    plt.tight_layout()
+    _show_or_close(show_plots)
+
+    print("\n[RUBRIC] Binning Process")
+    bin_feature = X_clean.columns[0]
+    X_bins = pd.qcut(X_clean[bin_feature], q=3, labels=["Low", "Medium", "High"], duplicates="drop")
+    bin_counts = X_bins.value_counts().sort_index()
+    print(f"Binning feature: {bin_feature}")
+    print(bin_counts)
+
+    plt.figure(figsize=(6, 4))
+    sns.barplot(x=bin_counts.index.astype(str), y=bin_counts.values, palette="viridis")
+    plt.title(f"Binning Counts for {bin_feature}")
+    plt.ylabel("Count")
+    plt.tight_layout()
+    _show_or_close(show_plots)
+
+    print("\n[RUBRIC] Descriptive Statistics")
+    stats_df = pd.DataFrame(
         {
-            "Test_Accuracy": float(acc),
-            "Error_Rate": float(err_rate),
-            "Precision": float(report["weighted avg"]["precision"]),
-            "Recall": float(report["weighted avg"]["recall"]),
-            "F1_Score": float(f1),
+            "min": X_clean.min(),
+            "max": X_clean.max(),
+            "mean": X_clean.mean(),
+            "variance": X_clean.var(),
+            "std": X_clean.std(),
+            "skewness": X_clean.skew(),
+            "kurtosis": X_clean.kurt(),
         }
     )
+    print(stats_df.head(12))
 
-    print(f"Test Accuracy: {acc:.4f}, Error Rate: {err_rate:.4f}")
-    print("Classification Report:\n", classification_report(y_test, y_pred, target_names=class_names))
+    print("\n[RUBRIC] Covariance, Correlation, Heatmap")
+    cov_df = X_clean.cov()
+    corr_df = X_clean.corr()
+    print("Covariance (first 8x8):")
+    print(cov_df.iloc[:8, :8])
+    print("Correlation (first 8x8):")
+    print(corr_df.iloc[:8, :8])
 
-    cm = confusion_matrix(y_test, y_pred)
-    results[name]["Confusion_Matrix"] = cm.tolist()
-    plt.figure(figsize=(6, 5))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=class_names, yticklabels=class_names)
-    plt.title(f"Confusion Matrix: {name}")
-    plt.ylabel("Actual Class")
-    plt.xlabel("Predicted Class")
+    heatmap_cols = X_clean.columns[:20]
+    plt.figure(figsize=(11, 9))
+    sns.heatmap(corr_df.loc[heatmap_cols, heatmap_cols], cmap="coolwarm", annot=False)
+    plt.title("Correlation Heatmap (First 20 Features)")
     plt.tight_layout()
-    plt.show()
+    _show_or_close(show_plots)
 
-    train_acc = model.score(X_train_model, y_train)
-    print(f"Training Accuracy: {train_acc:.4f}")
-    if (train_acc - acc) > 0.1:
-        results[name]["Overfit_Analysis"] = "Potential Overfitting (Train Acc >> Test Acc)"
-    elif acc < 0.6:
-        results[name]["Overfit_Analysis"] = "Potential Underfitting (Low Acc)"
-    else:
-        results[name]["Overfit_Analysis"] = "Balanced (Train Acc \u2248 Test Acc)"
-    print(f"Overfitting Analysis: {results[name]['Overfit_Analysis']}")
+    print("\n[RUBRIC] Statistical Tests: Chi-square, t-test, ANOVA")
+    # Chi-square requires non-negative features
+    chi_scaler = MinMaxScaler()
+    X_nonneg = chi_scaler.fit_transform(X_clean)
+    chi_stat, chi_p = chi2(X_nonneg, y_binary)
+    chi_df = pd.DataFrame(
+        {
+            "feature": X_clean.columns,
+            "chi2_stat": chi_stat,
+            "chi2_p_value": chi_p,
+        }
+    ).sort_values("chi2_p_value")
+    print("Top 10 Chi-square features:")
+    print(chi_df.head(10))
 
-    if hasattr(model, "predict_proba"):
-        y_proba = model.predict_proba(X_test_model)[:, 1]
-        fpr, tpr, _ = roc_curve(y_test, y_proba)
-        roc_auc = auc(fpr, tpr)
+    t_rows = []
+    anova_rows = []
+    grp0 = X_clean[y_binary == 0]
+    grp1 = X_clean[y_binary == 1]
+    for col in X_clean.columns:
+        t_stat, t_p = stats.ttest_ind(grp0[col], grp1[col], equal_var=False, nan_policy="omit")
+        f_stat, f_p = stats.f_oneway(grp0[col], grp1[col])
+        t_rows.append((col, float(t_stat), float(t_p)))
+        anova_rows.append((col, float(f_stat), float(f_p)))
 
-        plt.figure(figsize=(7, 7))
-        plt.plot(fpr, tpr, label=f"ROC curve (AUC = {roc_auc:.2f})")
-        plt.plot([0, 1], [0, 1], "k--")
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
+    ttest_df = pd.DataFrame(t_rows, columns=["feature", "t_stat", "t_p_value"]).sort_values("t_p_value")
+    anova_df = pd.DataFrame(anova_rows, columns=["feature", "f_stat", "anova_p_value"]).sort_values("anova_p_value")
+
+    print("Top 10 t-test features:")
+    print(ttest_df.head(10))
+    print("Top 10 ANOVA features:")
+    print(anova_df.head(10))
+
+    return {
+        "X_clean": X_clean,
+        "stats_df": stats_df,
+        "cov_df": cov_df,
+        "corr_df": corr_df,
+        "chi_df": chi_df,
+        "ttest_df": ttest_df,
+        "anova_df": anova_df,
+    }
+
+
+def feature_reduction_selection_section(
+    X_clean: pd.DataFrame,
+    y_binary: pd.Series,
+    show_plots: bool,
+) -> Dict[str, object]:
+    print("\n=== [RUBRIC] FEATURE REDUCTION & SELECTION ===")
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_clean)
+
+    print("\n[RUBRIC] PCA")
+    pca = PCA(n_components=2, random_state=RANDOM_STATE)
+    X_pca = pca.fit_transform(X_scaled)
+    print(f"PCA explained variance sum (2 components): {pca.explained_variance_ratio_.sum():.4f}")
+
+    print("\n[RUBRIC] LDA Projection")
+    lda_proj = SKLDA(n_components=1)
+    X_lda = lda_proj.fit_transform(X_scaled, y_binary)
+    print(f"LDA output shape: {X_lda.shape}")
+
+    print("\n[RUBRIC] SVD")
+    svd = TruncatedSVD(n_components=2, random_state=RANDOM_STATE)
+    X_svd = svd.fit_transform(X_scaled)
+    print(f"SVD explained variance sum (2 components): {svd.explained_variance_ratio_.sum():.4f}")
+
+    print("\n[RUBRIC] Kernel PCA (non-linear check)")
+    subset_n = min(3000, X_scaled.shape[0])
+    rng = np.random.default_rng(RANDOM_STATE)
+    subset_idx = rng.choice(X_scaled.shape[0], size=subset_n, replace=False)
+    X_subset = X_scaled[subset_idx]
+    y_subset = y_binary.to_numpy()[subset_idx]
+    kpca = KernelPCA(n_components=2, kernel="rbf", gamma=0.03, random_state=RANDOM_STATE)
+    X_kpca = kpca.fit_transform(X_subset)
+    print(f"Kernel PCA sample shape: {X_kpca.shape}")
+
+    print("\n[RUBRIC] Feature Selection Examples")
+    k = min(20, X_clean.shape[1])
+    kbest = SelectKBest(score_func=f_classif, k=k)
+    kbest.fit(X_clean, y_binary)
+    kbest_features = X_clean.columns[kbest.get_support()].tolist()
+
+    rfe_base = LogisticRegression(max_iter=2000, solver="liblinear", random_state=RANDOM_STATE)
+    rfe = RFE(estimator=rfe_base, n_features_to_select=k)
+    rfe.fit(X_scaled, y_binary)
+    rfe_features = X_clean.columns[rfe.support_].tolist()
+
+    print("Top SelectKBest features (first 10):", kbest_features[:10])
+    print("Top RFE features (first 10):", rfe_features[:10])
+
+    # Visualization for reduction outputs
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+    scatter_kwargs = dict(c=y_binary, cmap="coolwarm", alpha=0.5, s=10)
+    axes[0, 0].scatter(X_pca[:, 0], X_pca[:, 1], **scatter_kwargs)
+    axes[0, 0].set_title("PCA (2D)")
+
+    axes[0, 1].scatter(np.arange(len(X_lda)), X_lda[:, 0], c=y_binary, cmap="coolwarm", alpha=0.5, s=10)
+    axes[0, 1].set_title("LDA Projection (1D)")
+    axes[0, 1].set_xlabel("Sample Index")
+
+    axes[1, 0].scatter(X_svd[:, 0], X_svd[:, 1], **scatter_kwargs)
+    axes[1, 0].set_title("SVD (2D)")
+
+    axes[1, 1].scatter(X_kpca[:, 0], X_kpca[:, 1], c=y_subset, cmap="coolwarm", alpha=0.5, s=10)
+    axes[1, 1].set_title("Kernel PCA (2D sample)")
+
+    plt.tight_layout()
+    _show_or_close(show_plots)
+
+    return {
+        "X_scaled": X_scaled,
+        "scaler": scaler,
+        "kbest_features": kbest_features,
+        "rfe_features": rfe_features,
+    }
+
+
+def _overfit_interpretation(train_acc: float, test_acc: float) -> str:
+    gap = train_acc - test_acc
+    if gap > 0.08:
+        return "Potential overfitting (high train-test gap)"
+    if test_acc < 0.65:
+        return "Potential underfitting (low test performance)"
+    return "Balanced fit"
+
+
+def evaluate_models_section(X_scaled: np.ndarray, y_binary: pd.Series, show_plots: bool) -> Dict[str, object]:
+    print("\n=== [RUBRIC] MODEL IMPLEMENTATION + EVALUATION ===")
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled,
+        y_binary.to_numpy(),
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE,
+        stratify=y_binary,
+    )
+
+    print("\n[RUBRIC] 80/20 Split")
+    print(f"Train shape: {X_train.shape}, Test shape: {X_test.shape}")
+
+    models = {
+        "Naive Bayesian": GaussianNB(),
+        "Bayesian Belief Network": DiscreteBBNClassifier(n_bins=4, max_features=24, alpha=1.0),
+        "Decision Tree (Entropy)": DecisionTreeClassifier(
+            criterion="entropy", max_depth=10, random_state=RANDOM_STATE
+        ),
+        "LDA Classifier": SKLDA(solver="lsqr", shrinkage="auto"),
+        "Neural Network (Feed Forward)": MLPClassifier(
+            hidden_layer_sizes=(64, 32),
+            activation="relu",
+            solver="adam",
+            max_iter=350,
+            early_stopping=True,
+            random_state=RANDOM_STATE,
+        ),
+        "K-NN (Euclidean)": KNeighborsClassifier(n_neighbors=5, p=2),
+        "K-NN (Manhattan)": KNeighborsClassifier(n_neighbors=5, p=1),
+        "Logistic Regression": LogisticRegression(
+            max_iter=3000,
+            solver="liblinear",
+            random_state=RANDOM_STATE,
+        ),
+    }
+
+    cv = StratifiedKFold(n_splits=CV_SPLITS, shuffle=True, random_state=RANDOM_STATE)
+
+    rows = []
+    conf_mats = {}
+    roc_data = {}
+    learning_curves = {}
+
+    print("\n[RUBRIC] K-Fold Cross Validation + Classification Metrics")
+    for name, model in models.items():
+        print(f"\n--- Model: {name} ---")
+
+        cv_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring="accuracy")
+        cv_mean = float(np.mean(cv_scores))
+
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+
+        test_acc = float(accuracy_score(y_test, y_pred))
+        error_rate = float(1.0 - test_acc)
+        prec = float(precision_score(y_test, y_pred, zero_division=0))
+        rec = float(recall_score(y_test, y_pred, zero_division=0))
+        f1 = float(f1_score(y_test, y_pred, zero_division=0))
+
+        cm = confusion_matrix(y_test, y_pred, labels=[0, 1])
+        conf_mats[name] = cm
+
+        train_acc = float(model.score(X_train, y_train))
+        fit_comment = _overfit_interpretation(train_acc, test_acc)
+
+        print(f"CV Accuracy mean: {cv_mean:.4f}")
+        print(f"Test Accuracy: {test_acc:.4f} | Error Rate: {error_rate:.4f}")
+        print(f"Precision: {prec:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}")
+        print("Confusion Matrix:")
+        print(cm)
+        print("Interpretation:", fit_comment)
+
+        print("Classification Report:")
+        print(classification_report(y_test, y_pred, target_names=["Non-Seizure", "Seizure"], zero_division=0))
+
+        # ROC / AUC
+        roc_auc_val = np.nan
+        y_score = None
+        if hasattr(model, "predict_proba"):
+            y_score = model.predict_proba(X_test)[:, 1]
+        elif hasattr(model, "decision_function"):
+            raw = model.decision_function(X_test)
+            y_score = (raw - raw.min()) / (raw.max() - raw.min() + 1e-12)
+
+        if y_score is not None:
+            fpr, tpr, _ = roc_curve(y_test, y_score)
+            roc_auc_val = float(auc(fpr, tpr))
+            roc_data[name] = (fpr, tpr, roc_auc_val)
+            print(f"ROC AUC: {roc_auc_val:.4f}")
+
+        # Learning curves (overfit/underfit curves)
+        lc_cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
+        train_sizes, tr_scores, va_scores = learning_curve(
+            model,
+            X_train,
+            y_train,
+            cv=lc_cv,
+            scoring="accuracy",
+            train_sizes=np.linspace(0.2, 1.0, 5),
+            n_jobs=None,
+        )
+        learning_curves[name] = {
+            "train_sizes": train_sizes,
+            "train_mean": tr_scores.mean(axis=1),
+            "valid_mean": va_scores.mean(axis=1),
+        }
+
+        rows.append(
+            {
+                "Model": name,
+                "CV_Accuracy": cv_mean,
+                "Test_Accuracy": test_acc,
+                "Error_Rate": error_rate,
+                "Precision": prec,
+                "Recall": rec,
+                "F1_Score": f1,
+                "ROC_AUC": roc_auc_val,
+                "Train_Accuracy": train_acc,
+                "Fit_Comment": fit_comment,
+            }
+        )
+
+    comparison_df = pd.DataFrame(rows).sort_values("Test_Accuracy", ascending=False).reset_index(drop=True)
+
+    # Regression model section from rubric
+    print("\n[RUBRIC] Regression Model Metrics (Linear Regression)")
+    reg = LinearRegression()
+    reg.fit(X_train, y_train)
+    y_reg = reg.predict(X_test)
+
+    reg_metrics = RegressionMetrics(
+        mae=float(mean_absolute_error(y_test, y_reg)),
+        rmse=float(np.sqrt(mean_squared_error(y_test, y_reg))),
+        r2=float(r2_score(y_test, y_reg)),
+        willmott_d=float(willmott_index(y_test, y_reg)),
+        nse=float(nash_sutcliffe_efficiency(y_test, y_reg)),
+        legates_mccabe=float(legates_mccabe_index(y_test, y_reg)),
+    )
+
+    print(reg_metrics)
+
+    # FINAL OUTPUT TABLE
+    print("\n=== FINAL MODEL COMPARISON TABLE ===")
+    print(comparison_df[["Model", "Test_Accuracy", "F1_Score", "Error_Rate", "ROC_AUC", "Fit_Comment"]])
+
+    print("\n=== CHARTS AFTER FINAL OUTPUT (as requested) ===")
+
+    # 1) Final performance bar charts
+    plt.figure(figsize=(12, 6))
+    plot_df = comparison_df.copy()
+    x = np.arange(len(plot_df))
+    width = 0.35
+    plt.bar(x - width / 2, plot_df["Test_Accuracy"], width=width, label="Test Accuracy", color="#2a9d8f")
+    plt.bar(x + width / 2, plot_df["F1_Score"], width=width, label="F1 Score", color="#457b9d")
+    plt.xticks(x, plot_df["Model"], rotation=35, ha="right")
+    plt.ylim(0, 1.05)
+    plt.title("Final Classification Performance")
+    plt.legend()
+    plt.tight_layout()
+    _show_or_close(show_plots)
+
+    # 2) Confusion matrices
+    n_models = len(conf_mats)
+    cols = 2
+    rows_grid = int(np.ceil(n_models / cols))
+    fig, axes = plt.subplots(rows_grid, cols, figsize=(12, 4 * rows_grid))
+    axes = np.array(axes).reshape(-1)
+    for ax, (name, cm) in zip(axes, conf_mats.items()):
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
+        ax.set_title(name)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("Actual")
+        ax.set_xticklabels(["Non-Seizure", "Seizure"], rotation=20)
+        ax.set_yticklabels(["Non-Seizure", "Seizure"], rotation=0)
+    for ax in axes[len(conf_mats) :]:
+        ax.axis("off")
+    plt.suptitle("Confusion Matrices per Model", y=1.02)
+    plt.tight_layout()
+    _show_or_close(show_plots)
+
+    # 3) ROC chart
+    if roc_data:
+        plt.figure(figsize=(8, 7))
+        for name, (fpr, tpr, roc_auc_val) in roc_data.items():
+            plt.plot(fpr, tpr, label=f"{name} (AUC={roc_auc_val:.3f})")
+        plt.plot([0, 1], [0, 1], "k--", label="Chance")
         plt.xlabel("False Positive Rate")
         plt.ylabel("True Positive Rate")
-        plt.title(f"ROC Curve for {name}")
-        plt.legend(loc="lower right")
+        plt.title("ROC Curves")
+        plt.legend(loc="lower right", fontsize=8)
         plt.tight_layout()
-        plt.show()
+        _show_or_close(show_plots)
 
-# --- CELL 7: Probabilistic Prediction using GaussianNB ---
+    # 4) Overfit/underfit learning curves
+    n_models_lc = len(learning_curves)
+    cols_lc = 2
+    rows_lc = int(np.ceil(n_models_lc / cols_lc))
+    fig, axes = plt.subplots(rows_lc, cols_lc, figsize=(12, 4 * rows_lc))
+    axes = np.array(axes).reshape(-1)
+    for ax, (name, lc) in zip(axes, learning_curves.items()):
+        ax.plot(lc["train_sizes"], lc["train_mean"], marker="o", label="Train")
+        ax.plot(lc["train_sizes"], lc["valid_mean"], marker="o", label="Validation")
+        ax.set_title(name)
+        ax.set_xlabel("Training Samples")
+        ax.set_ylabel("Accuracy")
+        ax.set_ylim(0.4, 1.05)
+        ax.legend()
+    for ax in axes[len(learning_curves) :]:
+        ax.axis("off")
+    plt.suptitle("Overfitting / Underfitting Curves", y=1.02)
+    plt.tight_layout()
+    _show_or_close(show_plots)
 
-print("\n--- Probabilistic Model using Gaussian Naive Bayes (Sklearn) ---")
-gnb = GaussianNB()
-gnb.fit(X_train, y_train)
+    # 5) Regression interpretation charts
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].scatter(y_test, y_reg, alpha=0.35, s=14, color="#2a9d8f")
+    axes[0].plot([0, 1], [0, 1], "r--")
+    axes[0].set_title("Linear Regression: Actual vs Predicted")
+    axes[0].set_xlabel("Actual")
+    axes[0].set_ylabel("Predicted")
 
-y_pred_nb = gnb.predict(X_test)
-print("Test Accuracy:", accuracy_score(y_test, y_pred_nb))
-print("\nClassification Report:")
-print(classification_report(y_test, y_pred_nb, target_names=class_names))
+    residuals = y_test - y_reg
+    sns.histplot(residuals, kde=True, ax=axes[1], color="#457b9d")
+    axes[1].set_title("Regression Residual Distribution")
+    axes[1].set_xlabel("Residual")
 
-print("\nConfusion Matrix:")
-print(confusion_matrix(y_test, y_pred_nb))
+    plt.tight_layout()
+    _show_or_close(show_plots)
 
-# --- FIXED SAMPLE PREDICTION ---
-sample_input = np.mean(X_train, axis=0).reshape(1, -1)
-print("\nSample Input (mean of scaled features):")
-print(sample_input)
+    return {
+        "comparison_df": comparison_df,
+        "conf_mats": conf_mats,
+        "roc_data": roc_data,
+        "learning_curves": learning_curves,
+        "regression_metrics": reg_metrics,
+    }
 
-prob_pred = gnb.predict_proba(sample_input)
-print("\nPredicted probabilities for sample input:", prob_pred)
 
-# --- CELL 8: Final Comparison Chart ---
+def related_work_and_references_section(best_accuracy: float) -> Dict[str, pd.DataFrame]:
+    print("\n=== [RUBRIC] RELATED WORK COMPARISON TABLE ===")
+    related_work = pd.DataFrame(
+        [
+            {
+                "Study": "This Project (current run)",
+                "Dataset": "Epileptic Seizure Recognition",
+                "Method": "Best model from this notebook",
+                "Reported Metric": "Accuracy",
+                "Result": round(best_accuracy, 4),
+                "Notes": "Auto-generated current result",
+            },
+            {
+                "Study": "Paper 1 (fill by team)",
+                "Dataset": "Epileptic/EEG domain",
+                "Method": "...",
+                "Reported Metric": "...",
+                "Result": "...",
+                "Notes": "Add cited paper result",
+            },
+            {
+                "Study": "Paper 2 (fill by team)",
+                "Dataset": "Epileptic/EEG domain",
+                "Method": "...",
+                "Reported Metric": "...",
+                "Result": "...",
+                "Notes": "Add cited paper result",
+            },
+        ]
+    )
+    print(related_work)
 
-comparison_df = pd.DataFrame(
-    {k: v for k, v in results.items() if "Test_Accuracy" in v}
-).T[["Test_Accuracy", "F1_Score", "Error_Rate"]]
-comparison_df = comparison_df.dropna()
+    print("\n=== [RUBRIC] REFERENCES (Starter List) ===")
+    references = pd.DataFrame(
+        {
+            "Reference": [
+                "UCI Epileptic Seizure Recognition Dataset",
+                "scikit-learn documentation (models/metrics)",
+                "Course-required domain papers (to be added by team)",
+            ],
+            "Link_or_Note": [
+                "https://archive.ics.uci.edu/dataset/388/epileptic+seizure+recognition",
+                "https://scikit-learn.org/stable/",
+                "Add at least 2-3 epileptic/EEG classification papers with proper citation format",
+            ],
+        }
+    )
+    print(references)
 
-print("\n--- FINAL MODEL COMPARISON TABLE ---")
-print(comparison_df.sort_values(by="Test_Accuracy", ascending=False))
+    return {"related_work": related_work, "references": references}
 
-plt.figure(figsize=(10, 6))
-comparison_df["Test_Accuracy"].sort_values().plot(kind="barh", color="skyblue")
-plt.title("Comparison of Model Test Accuracies")
-plt.xlabel("Test Accuracy")
-plt.tight_layout()
-plt.show()
+
+def run_phase1_pipeline(show_plots: bool = True) -> Dict[str, object]:
+    sns.set_style("whitegrid")
+
+    print("=== DATASET EXPLANATION ===")
+    print("- Source file: epileptic_seizure_data.csv")
+    print("- Raw shape expected: ~11,500 rows, 180 columns (including index-like + y)")
+    print("- Features used: X1..X178")
+    print("- Binary mapping: Seizure=1 if y==1 else Non-Seizure=0")
+
+    df, X, y_raw, y_binary = load_dataset(DATA_PATH)
+    print("\nLoaded shape:", df.shape)
+    print("Original class distribution (y):")
+    print(y_raw.value_counts().sort_index())
+    print("Binary class distribution:")
+    print(y_binary.value_counts().sort_index())
+
+    prep_outputs = preprocessing_section(X, y_binary, show_plots=show_plots)
+    red_outputs = feature_reduction_selection_section(
+        prep_outputs["X_clean"],
+        y_binary,
+        show_plots=show_plots,
+    )
+    eval_outputs = evaluate_models_section(red_outputs["X_scaled"], y_binary, show_plots=show_plots)
+
+    best_accuracy = float(eval_outputs["comparison_df"].iloc[0]["Test_Accuracy"])
+    refs_outputs = related_work_and_references_section(best_accuracy)
+
+    print("\n=== RUBRIC ALIGNMENT SUMMARY ===")
+    print("- Preprocessing: covered")
+    print("- Feature reduction/selection: covered")
+    print("- Required model set: covered")
+    print("- Classification + regression evaluation metrics: covered")
+    print("- Overfit/underfit curves + interpretation: covered")
+    print("- Charts after final output: covered")
+    print("- Related work + references: starter tables generated (fill paper rows with your cited studies)")
+
+    return {
+        "dataset_shape": df.shape,
+        "prep": prep_outputs,
+        "reduction": red_outputs,
+        "evaluation": eval_outputs,
+        "references": refs_outputs,
+    }
+
+
+if __name__ == "__main__":
+    run_phase1_pipeline(show_plots=True)
